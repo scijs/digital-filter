@@ -58,7 +58,11 @@ export function cheb1ord (fpass, fstop, rp, rs, fs) {
  * @returns {{order: number, Wn: number}} Minimum order and natural frequency
  */
 export function cheb2ord (fpass, fstop, rp, rs, fs) {
-	// Same formula as cheb1ord (dual relationship)
+	// Same order formula as cheb1ord (dual relationship).
+	// Wn convention: the stopband edge, ready to feed chebyshev2(order, Wn, ...)
+	// whose fc parameter IS the stopband edge — the stopband spec is then met
+	// exactly and the passband over-satisfied. (scipy's cheb2ord instead pulls
+	// Wn below fstop so the passband is exact; same order, different Wn.)
 	let { order } = cheb1ord(fpass, fstop, rp, rs, fs)
 	return { order, Wn: fstop }
 }

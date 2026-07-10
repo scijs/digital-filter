@@ -1,132 +1,84 @@
 /**
- * Partial fraction expansion of B(z)/A(z).
- * Decomposes transfer function into parallel first-order sections:
- *   H(z) = sum(r[k] / (1 - p[k]*z^-1)) + k[0] + k[1]*z^-1 + ...
+ * Partial fraction expansion of B(z)/A(z) — scipy.signal.residuez convention.
+ * Coefficients ascending in z^-1 (b0-first, the library-wide filter convention):
+ *   H(z) = B(z)/A(z) = sum(r[k] / (1 - p[k]*z^-1)) + k[0] + k[1]*z^-1 + ...
+ * Simple (distinct) poles only — repeated poles throw rather than return garbage.
  *
- * @param {Array<number>|Float64Array} b - Numerator polynomial [b0, b1, ...]
- * @param {Array<number>|Float64Array} a - Denominator polynomial [a0, a1, ...]
+ * @param {Array<number>|Float64Array} b - Numerator [b0, b1, ...] ascending z^-1
+ * @param {Array<number>|Float64Array} a - Denominator [a0, a1, ...] ascending z^-1, a0 != 0
  * @returns {{r: Array<{re:number,im:number}>, p: Array<{re:number,im:number}>, k: Float64Array}}
- *   r: residues, p: poles, k: direct (FIR) terms
+ *   r: residues, p: poles, k: direct (FIR) terms ascending z^-1
  */
+import { polyRoots } from './convert.js'
+
 export default function residue (b, a) {
-	b = Array.from(b)
-	a = Array.from(a)
+	b = trimTrailing(Array.from(b))
+	a = trimTrailing(Array.from(a))
+	if (!a.length || a[0] === 0) throw Error('residue: a[0] must be nonzero')
 
 	// Normalize by a[0]
-	let a0 = a[0]
-	if (a0 !== 1) {
+	if (a[0] !== 1) {
+		let a0 = a[0]
 		b = b.map(v => v / a0)
 		a = a.map(v => v / a0)
 	}
 
-	// Direct terms via polynomial long division if deg(b) >= deg(a)
-	let k = []
-	let rem = b.slice()
-	while (rem.length >= a.length) {
-		let c = rem[0]
-		k.push(c)
-		for (let i = 0; i < a.length; i++) {
-			rem[i] -= c * a[i]
+	// Direct terms: divide B(v) by A(v) (v = z^-1) from the highest power down,
+	// leaving deg(R) < deg(A). Quotient collects ascending in v, like scipy.
+	let k = [], rem = b.slice()
+	if (rem.length >= a.length) {
+		k = new Array(rem.length - a.length + 1).fill(0)
+		for (let d = rem.length - a.length; d >= 0; d--) {
+			let c = rem[d + a.length - 1] / a[a.length - 1]
+			k[d] = c
+			for (let i = 0; i < a.length; i++) rem[d + i] -= c * a[i]
 		}
-		rem.shift()
+		rem = trimTrailing(rem.slice(0, a.length - 1))
 	}
 
-	// Find poles of A(z)
+	// Poles: A(v) = prod(1 - p_j*v), so p_j are the roots of the ascending array
+	// read as a monic descending-z polynomial (multiply A(z^-1) by z^n).
 	let poles = polyRoots(a)
 
-	// Compute residues: r_k = (z - p_k) * B_rem(z) / A(z) evaluated at z = p_k
-	// where B_rem is the remainder after long division
+	// Residues at simple poles: r_k = R(1/p_k) / prod_{j!=k}(1 - p_j/p_k)
 	let r = []
 	for (let i = 0; i < poles.length; i++) {
 		let pk = poles[i]
-		// Evaluate rem(z) at z = p_k via Horner
+		let pMag = pk.re * pk.re + pk.im * pk.im
+		if (pMag < 1e-30) throw Error('residue: pole at z=0 (trailing a coefficient is zero)')
+		let vr = pk.re / pMag, vi = -pk.im / pMag  // v_k = 1/p_k
+
+		// R(v_k) via Horner on ascending rem: R(v) = rem[0] + rem[1]*v + ...
 		let nr = 0, ni = 0
-		for (let j = 0; j < rem.length; j++) {
-			let tr = nr * pk.re - ni * pk.im + rem[j]
-			let ti = nr * pk.im + ni * pk.re
+		for (let j = rem.length - 1; j >= 0; j--) {
+			let tr = nr * vr - ni * vi + rem[j]
+			let ti = nr * vi + ni * vr
 			nr = tr; ni = ti
 		}
-		// Evaluate A'(z) at z = p_k (derivative of denominator)
-		// A'(z) = sum(j * a[j] * z^(n-j-1)) where n = deg(A)
-		// Or equivalently: product of (z - p_j) for j != i
+
+		// prod_{j!=k}(1 - p_j/p_k) = prod_{j!=k}(1 - p_j*v_k)
 		let dr = 1, di = 0
 		for (let j = 0; j < poles.length; j++) {
 			if (i === j) continue
-			let diffR = pk.re - poles[j].re
-			let diffI = pk.im - poles[j].im
-			let tr = dr * diffR - di * diffI
-			let ti = dr * diffI + di * diffR
+			let fr = 1 - (poles[j].re * vr - poles[j].im * vi)
+			let fi = -(poles[j].re * vi + poles[j].im * vr)
+			let tr = dr * fr - di * fi
+			let ti = dr * fi + di * fr
 			dr = tr; di = ti
 		}
-		// r_k = rem(p_k) / A'(p_k) = rem(p_k) / product(p_k - p_j)
 		let dMag = dr * dr + di * di
-		if (dMag < 1e-30) {
-			r.push({re: 0, im: 0})
-		} else {
-			r.push({
-				re: (nr * dr + ni * di) / dMag,
-				im: (ni * dr - nr * di) / dMag
-			})
-		}
+		if (dMag < 1e-24) throw Error('residue: repeated poles are not supported')
+		r.push({
+			re: (nr * dr + ni * di) / dMag,
+			im: (ni * dr - nr * di) / dMag
+		})
 	}
 
 	return { r, p: poles, k: new Float64Array(k) }
 }
 
-// Find roots of monic polynomial [1, a1, a2, ...]
-function polyRoots (p) {
-	let n = p.length - 1
-	if (n === 0) return []
-	if (n === 1) return [{ re: -p[1], im: 0 }]
-	if (n === 2) {
-		let disc = p[1] * p[1] - 4 * p[2]
-		if (disc >= 0) {
-			let sq = Math.sqrt(disc)
-			return [{ re: (-p[1] + sq) / 2, im: 0 }, { re: (-p[1] - sq) / 2, im: 0 }]
-		}
-		let sq = Math.sqrt(-disc)
-		return [{ re: -p[1] / 2, im: sq / 2 }, { re: -p[1] / 2, im: -sq / 2 }]
-	}
-	return durandKerner(p)
-}
-
-function durandKerner (p) {
-	let n = p.length - 1
-	let roots = []
-	for (let i = 0; i < n; i++) {
-		let angle = 2 * Math.PI * i / n + 0.4
-		let r = Math.pow(Math.abs(p[n]), 1 / n) || 1
-		roots.push({ re: r * Math.cos(angle), im: r * Math.sin(angle) })
-	}
-	for (let iter = 0; iter < 100; iter++) {
-		let maxChange = 0
-		for (let i = 0; i < n; i++) {
-			let pr = p[0], pi = 0
-			for (let k = 1; k < p.length; k++) {
-				let newR = pr * roots[i].re - pi * roots[i].im + p[k]
-				let newI = pr * roots[i].im + pi * roots[i].re
-				pr = newR; pi = newI
-			}
-			let dr = 1, di = 0
-			for (let j = 0; j < n; j++) {
-				if (i === j) continue
-				let diffR = roots[i].re - roots[j].re
-				let diffI = roots[i].im - roots[j].im
-				let newR = dr * diffR - di * diffI
-				let newI = dr * diffI + di * diffR
-				dr = newR; di = newI
-			}
-			let dMag = dr * dr + di * di
-			let deltaR = (pr * dr + pi * di) / dMag
-			let deltaI = (pi * dr - pr * di) / dMag
-			roots[i].re -= deltaR
-			roots[i].im -= deltaI
-			maxChange = Math.max(maxChange, Math.abs(deltaR) + Math.abs(deltaI))
-		}
-		if (maxChange < 1e-14) break
-	}
-	for (let r of roots) {
-		if (Math.abs(r.im) < 1e-10) r.im = 0
-	}
-	return roots
+function trimTrailing (p) {
+	let n = p.length
+	while (n > 1 && p[n - 1] === 0) n--
+	return p.slice(0, n)
 }

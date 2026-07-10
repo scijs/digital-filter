@@ -20,7 +20,7 @@
  *   theme.colors = ['#e74c3c', '#2ecc71']
  *   theme.fill = false
  *
- * @module digital-filte./plot
+ * @module digital-filter/plot
  */
 import { freqz, mag2db, groupDelay, impulseResponse } from '../index.js'
 

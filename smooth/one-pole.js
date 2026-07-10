@@ -7,6 +7,14 @@
 
 let {exp, PI} = Math
 
+/**
+ * @param {Float64Array} data - Input (modified in-place)
+ * @param {object} params - { fc: cutoff Hz, fs: sample rate (default 44100),
+ *   a: pole coefficient override — the weight on the PREVIOUS output,
+ *   a = exp(-2π·fc/fs) (note: one-euro's alpha is the opposite convention,
+ *   the weight on the current sample); y1: state (managed) }
+ * @returns {Float64Array} data
+ */
 export default function onePole (data, params) {
 	let y1 = params.y1 != null ? params.y1 : 0
 	let a = params.a

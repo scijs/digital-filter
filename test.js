@@ -1,6 +1,5 @@
 import test, { almost, ok, is, throws } from 'tst'
 import * as dsp from './index.js'
-import { type2 as chebyshevType2 } from './iir/chebyshev.js'
 
 let EPSILON = 1e-10
 let LOOSE = 1e-4
@@ -207,6 +206,69 @@ test('elliptic even order — correct equiripple', () => {
 	ok(db[idx5k] < -30, 'elliptic N=4 stopband > 30dB')
 })
 
+test('elliptic — prototype matches scipy.signal.ellipap 1.17.1', async () => {
+	let { ellipticPrototype } = await import('./iir/elliptic.js')
+	// ellipap(N, 1, 40) — [sigma, omega] pairs sorted by |omega|, zeros descending
+	let refs = {
+		3: { z: [2.758343343678], p: [[-0.523721030720, 0], [-0.227259770751, 0.976571011653]] },
+		4: { z: [3.525287432996, 1.609550401225], p: [[-0.364290595873, 0.478602767641], [-0.105281264621, 0.993710811209]] },
+		5: { z: [1.764288440909, 1.253807568980], p: [[-0.385344340276, 0], [-0.219106729346, 0.741033961151], [-0.049920708887, 0.998198050578]] },
+		7: { z: [1.625792481857, 1.135829559757, 1.052759895646], p: [[-0.357647501117, 0], [-0.205913778207, 0.688790553213], [-0.060142897531, 0.940387713027], [-0.011344567662, 0.999796409003]] },
+	}
+	for (let N of [3, 4, 5, 7]) {
+		let { poles, zeros } = ellipticPrototype(N, 1, 40)
+		let zs = zeros.map(z => z[1]).sort((a, b) => b - a)
+		zs.forEach((z, i) => almost(z, refs[N].z[i], 1e-9))
+		let ps = poles.slice().sort((a, b) => Math.abs(a[1]) - Math.abs(b[1]))
+		ps.forEach((p, i) => {
+			almost(p[0], refs[N].p[i][0], 1e-9)
+			almost(Math.abs(p[1]), Math.abs(refs[N].p[i][1]), 1e-9)
+		})
+	}
+})
+
+test('elliptic odd order — exact equiripple', async () => {
+	// The odd-order defect: interior passband peaks exceeded Rp. Now the v0
+	// closed form guarantees [-Rp, 0] dB across the passband for any order.
+	let { ellipticPrototype } = await import('./iir/elliptic.js')
+	for (let N of [3, 5, 7]) {
+		let sos = dsp.elliptic(N, 2000, 44100, 1, 40)
+		let resp = dsp.freqz(sos, 8192, 44100)
+		let db = dsp.mag2db(resp.magnitude)
+		// Stopband starts at the prototype's own selectivity edge; the smallest
+		// finite zero bounds it from above. Bilinear-map it to a digital frequency.
+		let { zeros } = ellipticPrototype(N, 1, 40)
+		let zMin = Math.min(...zeros.map(z => z[1]))
+		let fStop = 44100 / Math.PI * Math.atan(zMin * Math.tan(Math.PI * 2000 / 44100))
+		let maxPB = -Infinity, minPB = Infinity, sbMax = -Infinity
+		for (let i = 0; i < resp.frequencies.length; i++) {
+			let f = resp.frequencies[i]
+			if (f <= 2000) { maxPB = Math.max(maxPB, db[i]); minPB = Math.min(minPB, db[i]) }
+			if (f >= fStop) sbMax = Math.max(sbMax, db[i])
+		}
+		ok(maxPB < 0.01, `N=${N} passband peak ~0dB (got ${maxPB.toFixed(4)})`)
+		ok(minPB > -1.01, `N=${N} passband ripple within 1dB (got ${minPB.toFixed(4)})`)
+		ok(sbMax < -39.9, `N=${N} stopband ≥ 40dB past first zero (got ${sbMax.toFixed(1)})`)
+	}
+})
+
+test('elliptic bandpass/bandstop — finite coefficients, real stopbands', () => {
+	let bp = dsp.elliptic(4, [1000, 3000], 44100, 1, 40, 'bandpass')
+	ok(bp.every(s => [s.b0, s.b1, s.b2, s.a1, s.a2].every(Number.isFinite)), 'bandpass finite')
+	let r = dsp.freqz(bp, 8192, 44100)
+	let db = dsp.mag2db(r.magnitude)
+	let at = f => db[Math.round(f / (22050 / 8192))]
+	ok(Math.abs(at(Math.sqrt(1000 * 3000)) + 1) < 0.1, 'center at -Rp (even order ripple min)')
+	ok(at(400) < -40, 'lower stopband')
+	ok(at(8000) < -40, 'upper stopband')
+	let bs = dsp.elliptic(4, [1000, 3000], 44100, 1, 40, 'bandstop')
+	let r2 = dsp.freqz(bs, 8192, 44100)
+	let db2 = dsp.mag2db(r2.magnitude)
+	let at2 = f => db2[Math.round(f / (22050 / 8192))]
+	ok(Math.abs(at2(10) + 1) < 0.1, 'DC at -Rp')
+	ok(at2(Math.sqrt(1000 * 3000)) < -39.9, 'notch at -Rs')
+})
+
 test('elliptic — section count', () => {
 	is(dsp.elliptic(1, 1000, 48000, 1, 40).length, 1, 'N=1: 1 section')
 	is(dsp.elliptic(2, 1000, 48000, 1, 40).length, 1, 'N=2: 1 section')
@@ -260,10 +322,6 @@ test('chebyshev — correct section count', () => {
 	is(dsp.chebyshev(2, 1000, 44100, 1).length, 1)
 	is(dsp.chebyshev(4, 1000, 44100, 1).length, 2)
 	is(dsp.chebyshev(5, 1000, 44100, 1).length, 3)
-})
-
-test('chebyshev type2 — throws not implemented', () => {
-	throws(() => { chebyshevType2() }, 'type2 throws')
 })
 
 test('bessel — DC gain ≈ 1', () => {
@@ -341,6 +399,25 @@ test('groupDelay — flat for FIR delay', () => {
 	let resp = dsp.groupDelay({b0: 1, b1: 0, b2: 0, a1: 0, a2: 0}, 64, 44100)
 	is(resp.frequencies.length, 64, 'correct length')
 	ok(Math.abs(resp.delay[1]) < 0.01, 'unity filter has ~0 delay')
+	// Pure z^-1: H(e^jw) = e^-jw → group delay = 1 sample at every frequency
+	// (Oppenheim & Schafer, Discrete-Time Signal Processing, §5.1)
+	let one = dsp.groupDelay({b0: 0, b1: 1, b2: 0, a1: 0, a2: 0}, 16, 44100)
+	for (let i = 0; i < 16; i++) almost(one.delay[i], 1, 1e-9)
+})
+
+test('groupDelay/phaseDelay — vs scipy.signal.group_delay 1.17.1', () => {
+	// biquad.lowpass(1000, 0.707, 44100) evaluated at w = i*pi/8, i=0..7
+	let lp = dsp.biquad.lowpass(1000, 0.707, 44100)
+	let gdRef = [9.9106873881, 1.4720954646, 0.354510959, 0.1653427775, 0.1014426639, 0.0731624112, 0.0591759735, 0.0524731268]
+	let pdRef = [0, 6.6571065181, 3.6867373801, 2.5379634839, 1.935636249, 1.5656269212, 1.3155846193, 1.1355531489]
+	let gd = dsp.groupDelay(lp, 8, 44100).delay
+	let pd = dsp.phaseDelay(lp, 8, 44100).delay
+	for (let i = 0; i < 8; i++) { almost(gd[i], gdRef[i], 1e-6); almost(pd[i], pdRef[i], 1e-6) }
+	// peaking(3000, 2, 44100, 6): negative group delay regions — signs must survive
+	let pk = dsp.biquad.peaking(3000, 2, 44100, 6)
+	let gdPk = [-0.811636782, 4.9214899487, -0.409458593, -0.1527479169, -0.0842833317, -0.0577949887, -0.0455607672, -0.0398992199]
+	let gd2 = dsp.groupDelay(pk, 8, 44100).delay
+	for (let i = 0; i < 8; i++) almost(gd2[i], gdPk[i], 1e-6)
 })
 
 test('filtfilt — zero-phase filtering', () => {
@@ -348,9 +425,81 @@ test('filtfilt — zero-phase filtering', () => {
 	let data = dc(256)
 	dsp.filtfilt(data, {coefs: c})
 	almost(data[128], 1, 0.01)
+	// Edge transients eliminated: constant input stays constant at BOTH ends
+	// (scipy.signal.sosfiltfilt default pad behavior)
+	almost(data[0], 1, 1e-9)
+	almost(data[255], 1, 1e-9)
+})
+
+test('filtfilt — matches scipy.signal.sosfiltfilt 1.17.1', () => {
+	// x = sin(2π·0.05·i) + 0.5·(i>=16), 32 samples, biquad.lowpass(1000, 0.707, 44100)
+	let c = dsp.biquad.lowpass(1000, 0.707, 44100)
+	let x = new Float64Array(32)
+	for (let i = 0; i < 32; i++) x[i] = Math.sin(2 * Math.PI * i * 0.05) + (i >= 16 ? 0.5 : 0)
+	let ref = [-0.10020853188, -0.063018292375, -0.027535771823, 0.005248043145, 0.034586173402, 0.060049534785, 0.081570927913, 0.099453810545, 0.114343987219, 0.127165987227, 0.139029364676, 0.151113105032, 0.164538473607, 0.180241783885, 0.198858587564, 0.220629693661, 0.245350285298, 0.2723934619, 0.300797214411, 0.32936132815, 0.356736140058, 0.381521009724, 0.402375235956, 0.418130036105, 0.427890180296, 0.4311149724, 0.427670383675, 0.417847063967, 0.402342391132, 0.382208333032, 0.358770332214, 0.333525342346]
+	dsp.filtfilt(x, { coefs: c })
+	for (let i = 0; i < 32; i++) almost(x[i], ref[i], 1e-9)
+})
+
+test('filtfilt — zero phase shift on a passband sine (vs single-pass lag)', () => {
+	// Sine with an exact integer number of periods in the measurement window:
+	// f = 44100·8/512 ≈ 689 Hz (period 64 samples) through a 2 kHz lowpass.
+	// Quadrature projection over [256, 768) measures phase directly: filtfilt
+	// must preserve it, a single pass must lag — the falsifiable distinction.
+	let c = dsp.biquad.lowpass(2000, 0.707, 44100)
+	let n = 1024, w = 2 * Math.PI * 8 / 512
+	let x = new Float64Array(n)
+	for (let i = 0; i < n; i++) x[i] = Math.sin(w * i)
+	let y = Float64Array.from(x)
+	dsp.filtfilt(y, { coefs: c })
+	let single = Float64Array.from(x)
+	dsp.filter(single, { coefs: c })
+	let phaseOf = sig => {
+		let ss = 0, sc = 0
+		for (let i = 256; i < 768; i++) { ss += sig[i] * Math.sin(w * i); sc += sig[i] * Math.cos(w * i) }
+		return Math.atan2(sc, ss)
+	}
+	ok(Math.abs(phaseOf(y) - phaseOf(x)) < 1e-6, 'filtfilt preserves phase')
+	ok(Math.abs(phaseOf(single) - phaseOf(x)) > 0.05, 'single pass lags — the property that distinguishes them')
 })
 
 // --- FIR design ---
+
+test('getWindow — named windows match scipy.signal.windows 1.17.1', async () => {
+	let { getWindow } = await import('./fir/util.js')
+	// scipy.signal.windows.<name>(8), first half (symmetric)
+	let refs = {
+		hamming: [0.08, 0.253194691145, 0.64235962962, 0.954445679235],
+		hann: [0, 0.188255099071, 0.611260466978, 0.950484433951],
+		blackman: [0, 0.090453424354, 0.459182957546, 0.9203636181],
+		'blackman-harris': [6e-05, 0.033391723478, 0.332833504299, 0.889369772223],
+		bartlett: [0, 0.285714285714, 0.571428571429, 0.857142857143],
+	}
+	for (let [name, ref] of Object.entries(refs)) {
+		let w = getWindow(name, 8)
+		for (let i = 0; i < 4; i++) almost(w[i], ref[i], 1e-9)
+		almost(w[7 - 0], w[0], 1e-12) // symmetric
+	}
+	// scipy.signal.windows.kaiser(8, 8.6)
+	let k = getWindow(['kaiser', 8.6], 8)
+	let kref = [0.001332513998, 0.091136512928, 0.459643774593, 0.920461583258]
+	for (let i = 0; i < 4; i++) almost(k[i], kref[i], 1e-9)
+	// Unknown names throw instead of silently designing a different filter
+	let threw = false
+	try { getWindow('blackmann', 8) } catch (e) { threw = true }
+	ok(threw, 'unknown window name throws')
+})
+
+test('kaiserord — matches scipy.signal.kaiserord 1.17.1 (+odd forcing)', () => {
+	// scipy.signal.kaiserord(60, 0.2) → (38, 5.65326); library forces odd → 39
+	let { numtaps, beta } = dsp.kaiserord(0.2, 60)
+	is(numtaps, 39)
+	almost(beta, 5.65326, 1e-9)
+	// scipy.signal.kaiserord(40, 0.1) → (46, 3.3953210522614574) → odd 47
+	;({ numtaps, beta } = dsp.kaiserord(0.1, 40))
+	is(numtaps, 47)
+	almost(beta, 3.3953210522614574, 1e-12)
+})
 
 
 test('firwin — lowpass FIR', () => {
@@ -513,6 +662,24 @@ test('tf2sos — round-trip with sos2tf', () => {
 	}
 })
 
+test('tf2zpk — leading/trailing zero coefficients (scipy 1.17.1 refs)', () => {
+	// scipy.signal.tf2zpk([0,1],[1,-0.5]) → z=[], p=[0.5], k=1
+	let {zeros, poles, gain} = dsp.tf2zpk([0, 1], [1, -0.5])
+	is(zeros.length, 0, 'no zeros')
+	almost(poles[0].re, 0.5, LOOSE)
+	almost(gain, 1, LOOSE)
+	// scipy.signal.tf2zpk([0,1,1],[1,-0.5,0.06]) → z=[-1], p=[0.3,0.2], k=1
+	;({zeros, poles, gain} = dsp.tf2zpk([0, 1, 1], [1, -0.5, 0.06]))
+	almost(zeros[0].re, -1, LOOSE)
+	almost(gain, 1, LOOSE)
+	// scipy.signal.tf2zpk([1,-0.9,0.2,0],[1]) → z=[0.5,0.4,0], k=1 (trailing zero → exact origin root)
+	;({zeros, poles, gain} = dsp.tf2zpk([1, -0.9, 0.2, 0], [1]))
+	let zs = zeros.map(z => z.re).sort()
+	almost(zs, [0, 0.4, 0.5], 1e-6)
+	for (let z of zeros) almost(z.im, 0, 1e-8)
+	almost(gain, 1, LOOSE)
+})
+
 test('zpk2tf — round-trip with tf2zpk', () => {
 	let b0 = [1, -1.5, 0.7]
 	let a0 = [1, -1.2, 0.5]
@@ -531,9 +698,9 @@ test('zpk2tf — butterworth round-trip', () => {
 	almost(a, a2, LOOSE)
 })
 
-test('sosfilt_zi — DC signal has no transient', () => {
+test('sosfiltZi — DC signal has no transient', () => {
 	let sos = dsp.butterworth(4, 1000, 44100)
-	let zi = dsp.sosfilt_zi(sos)
+	let zi = dsp.sosfiltZi(sos)
 	// Filter constant signal with initial conditions — should have no transient
 	let dcVal = 5.0
 	let data = new Float64Array(128).fill(dcVal)
@@ -806,7 +973,7 @@ test('levinson — produces LPC coefficients', () => {
 test('dynamicSmoothing — smooths signal', () => {
 	let data = new Float64Array(256)
 	for (let i = 0; i < 256; i++) data[i] = Math.sin(2 * Math.PI * 10 * i / 44100) + (Math.random() - 0.5) * 0.1
-	dsp.dynamicSmoothing(data, {minFc: 5, maxFc: 5000, fs: 44100})
+	dsp.dynamicSmoothing(data, {fc: 5, fs: 44100})
 	ok(data.every(isFinite), 'all finite')
 })
 
@@ -917,20 +1084,6 @@ test('svf — all 6 modes produce output on impulse', () => {
 		ok(hasOutput, 'SVF ' + type + ' produces output')
 	}
 })
-
-// --- Moog ladder self-oscillation ---
-
-// --- Diode ladder stable at high resonance ---
-
-// --- Korg35 HP mode removes DC ---
-
-// --- Gammatone center frequency matches ---
-
-// --- octaveBank band count for different fractions ---
-
-// --- erbBank spacing increases with frequency ---
-
-// --- barkBank has 24 bands ---
 
 // --- firls produces symmetric coefficients ---
 
@@ -1048,10 +1201,6 @@ test('rls — error decreases over time', () => {
 	for (let i = 462; i < 512; i++) lateErr += Math.abs(params.error[i])
 	ok(lateErr < earlyErr, 'RLS error decreases: early=' + earlyErr.toFixed(3) + ' late=' + lateErr.toFixed(3))
 })
-
-// --- ITU-468: 0dB normalization at 2kHz reference ---
-
-// --- dcBlocker: verify last sample near 0 for DC input ---
 
 // --- allpass second-order: unity magnitude ---
 
@@ -1263,15 +1412,15 @@ test('scipy: elliptic frequency response matches', () => {
 })
 
 test('scipy: bessel frequency response matches', () => {
-	// scipy: bessel(4, 1000, fs=44100, norm='delay')
+	// scipy.signal.bessel(4, 1000, fs=44100, output='sos', norm='mag') at
+	// [500, 1000, 2000] Hz → [-0.7033, -3.0103, -13.5332] dB (scipy 1.17.1);
+	// the library implements the norm='mag' convention (-3 dB at fc)
 	let sos = dsp.bessel(4, 1000, 44100)
-	let resp = dsp.freqz(sos, 2048, 44100)
+	let resp = dsp.freqz(sos, [500, 1000, 2000], 44100)
 	let db = dsp.mag2db(resp.magnitude)
-	let at = f => { let i = Math.round(f / (44100 / (2 * 2048))); return db[i] }
-	// Bessel has soft rolloff — verify approximate shape
-	ok(at(500) > -1, '500 Hz within 1 dB')     // scipy: -0.155
-	ok(at(1000) > -4 && at(1000) < 0, '1kHz around -3 dB')  // scipy: -0.63 (bessel -3dB is NOT at fc for norm=delay)
-	ok(at(2000) < -5, '2kHz attenuated')        // scipy: -8.5
+	almost(db[0], -0.7033, 1e-3)
+	almost(db[1], -3.0103, 1e-3)
+	almost(db[2], -13.5332, 1e-3)
 })
 
 test('scipy: firwin DC gain = 1', () => {
@@ -1371,7 +1520,7 @@ test('lattice — reflection coefficients produce stable output', () => {
 test('dynamicSmoothing — smooths signal without NaN', () => {
 	let data = new Float64Array(256)
 	for (let i = 0; i < 256; i++) data[i] = Math.sin(2 * Math.PI * i / 64)
-	dsp.dynamicSmoothing(data, { minFc: 100, maxFc: 5000, sensitivity: 1, fs: 44100 })
+	dsp.dynamicSmoothing(data, { fc: 100, sensitivity: 1, fs: 44100 })
 	// Output should be valid and smoother than input
 	ok(isFinite(data[128]), 'finite output')
 	ok(data[0] !== 0 || data[1] !== 0, 'produces output')
@@ -1379,14 +1528,6 @@ test('dynamicSmoothing — smooths signal without NaN', () => {
 	let energy = 0
 	for (let i = 1; i < 256; i++) energy += (data[i] - data[i-1]) ** 2
 	ok(energy < 256, 'smoothed signal has limited derivative')
-})
-
-test('farrow — integer delay is exact', () => {
-	let data = new Float64Array(32)
-	data[10] = 1  // impulse at sample 10
-	dsp.farrow(data, { delay: 3, order: 3 })
-	// Integer delay should shift impulse exactly
-	ok(Math.abs(data[13]) > 0.5, 'impulse shifted to ~13')
 })
 
 test('thiran — allpass preserves energy', () => {
@@ -1406,16 +1547,6 @@ test('cic — DC gain matches (R*N) factor', () => {
 	ok(out.length === Math.floor(256 / R), 'correct decimated length')
 	// Output should converge to a constant for DC input
 	ok(Math.abs(out[out.length - 1]) > 0, 'DC passes through')
-})
-
-test('polyphase — phases reconstruct original', () => {
-	let h = dsp.firwin(64, 0.25 * 44100, 44100)
-	let phases = dsp.polyphase(h, 4)
-	is(phases.length, 4)
-	// Total length of all phases should equal original
-	let total = 0
-	for (let p of phases) total += p.length
-	is(total, h.length)
 })
 
 test('oversample — preserves DC in middle', () => {
@@ -1447,8 +1578,8 @@ test('convolution — known result', () => {
 
 test('buttord — minimum order estimation', () => {
 	let { order, Wn } = dsp.buttord(1000, 1500, 1, 40, 44100)
-	// scipy: buttord(1000, 1500, 1, 40, fs=44100) → order=17
-	ok(order >= 10 && order <= 20, 'order in expected range: ' + order)
+	// scipy.signal.buttord(1000/22050, 1500/22050, 1, 40) → order=13 (scipy 1.17.1)
+	is(order, 13, 'order matches scipy')
 	ok(Wn > 900 && Wn < 1100, 'Wn near passband: ' + Wn.toFixed(0))
 })
 
@@ -1690,26 +1821,45 @@ test('residue — simple first-order', () => {
 	is(k.length, 0, 'no direct terms')
 })
 
-test('residue — second-order with direct term', () => {
-	// b = [1, 0, 0], a = [1, -0.5] → deg(b)=2 > deg(a)=1 → has direct terms
-	let {r, p, k} = dsp.residue([1, 0, 0], [1, -0.5])
-	ok(k.length > 0, 'has direct terms')
+test('residue — direct terms (scipy residuez)', () => {
+	// scipy.signal.residuez([0,1],[1,-0.5]) → r=[2], p=[0.5], k=[-2]  (scipy 1.17.1)
+	let {r, p, k} = dsp.residue([0, 1], [1, -0.5])
 	is(p.length, 1, '1 pole')
+	almost(p[0].re, 0.5, LOOSE)
+	almost(r[0].re, 2, LOOSE)
+	is(k.length, 1, '1 direct term')
+	almost(k[0], -2, LOOSE)
+	// scipy.signal.residuez([1,0,0,1],[1,-0.5]) → r=[9], p=[0.5], k=[-8,-4,-2]
+	;({r, p, k} = dsp.residue([1, 0, 0, 1], [1, -0.5]))
+	almost(r[0].re, 9, LOOSE)
+	almost(Array.from(k), [-8, -4, -2], LOOSE)
 })
 
-test('residue — two real poles', () => {
-	// a = [1, -1.5, 0.5] has poles at 1 and 0.5
+test('residue — two real poles (scipy residuez)', () => {
+	// scipy.signal.residuez([1],[1,-1.5,0.5]) → r=[-1,2], p=[0.5,1], k=[]  (scipy 1.17.1)
 	let {r, p, k} = dsp.residue([1], [1, -1.5, 0.5])
 	is(p.length, 2, '2 poles')
 	is(r.length, 2, '2 residues')
-	// Verify reconstruction: B(z)/A(z) = sum(r_k / (z - p_k))
-	// At z = 2: H(2) = 1 / ((2-1)(2-0.5)) = 1/1.5
-	let Hz = 1 / ((2 - 1) * (2 - 0.5))
+	is(k.length, 0, 'no direct terms')
+	// Reconstruction per module contract: H(z) = sum(r_k / (1 - p_k*z^-1))
+	// At z^-1 = 0.5: B/A = 1/(1 - 0.75 + 0.125) = 8/3
+	let v = 0.5
 	let Hrecon = 0
 	for (let i = 0; i < r.length; i++) {
-		Hrecon += r[i].re / (2 - p[i].re)
+		Hrecon += r[i].re / (1 - p[i].re * v)
 	}
-	almost(Hrecon, Hz, 0.01)
+	almost(Hrecon, 8 / 3, LOOSE)
+})
+
+test('residue — cross-checks vs scipy.signal.residuez 1.17.1', () => {
+	// residuez([1,2,1],[1,-1.2,0.35]) → r=[-22.5, 20.6428571...], p=[0.5, 0.7], k=[2.857142857...]
+	let {r, p, k} = dsp.residue([1, 2, 1], [1, -1.2, 0.35])
+	let byPole = p.map((pk, i) => [pk.re, r[i].re]).sort((x, y) => x[0] - y[0])
+	almost(byPole[0][0], 0.5, 1e-9)
+	almost(byPole[0][1], -22.5, 1e-6)
+	almost(byPole[1][0], 0.7, 1e-9)
+	almost(byPole[1][1], 20.642857142857125, 1e-6)
+	almost(k[0], 2.857142857142857, 1e-9)
 })
 
 // --- tf2ss / ss2tf ---
@@ -1812,4 +1962,304 @@ test('deconvolve — inverse of convolution', () => {
 	let conv = dsp.convolution(a, b)
 	let {q} = dsp.deconvolve(Array.from(conv), Array.from(b))
 	for (let i = 0; i < a.length; i++) almost(q[i], a[i], LOOSE)
+})
+
+// ================================================================
+// Differential tests vs authoritative references (scipy 1.17.1)
+// ================================================================
+
+test('firwin2 — matches scipy.signal.firwin2 1.17.1', () => {
+	// scipy.signal.firwin2(31, [0, 0.3, 0.4, 1], [1, 1, 0, 0], nfreqs=1025)
+	let h = dsp.firwin2(31, [0, 0.3, 0.4, 1], [1, 1, 0, 0], { nfft: 1024 })
+	let ref = [-0.0312066571, -0.0600244568, -0.01458615, 0.1216143856, 0.2796121949, 0.3500003815]
+	for (let i = 0; i < 6; i++) almost(h[10 + i], ref[i], 1e-4)
+	// cutoff sits where specified, not at 2x: -6dB near f = 0.35
+	let mag = f => {
+		let re = 0, im = 0
+		for (let n = 0; n < h.length; n++) { re += h[n] * Math.cos(Math.PI * f * n); im -= h[n] * Math.sin(Math.PI * f * n) }
+		return Math.hypot(re, im)
+	}
+	ok(Math.abs(20 * Math.log10(mag(0.35)) + 6) < 1, '-6dB at midpoint of transition')
+	ok(mag(0.2) > 0.99 && mag(0.2) < 1.01, 'passband unity')
+	ok(mag(0.6) < 0.01, 'stopband rejected')
+})
+
+test('remez — matches scipy.signal.remez 1.17.1', () => {
+	// scipy.signal.remez(31, [0, 0.15, 0.2, 0.5], [1, 0], fs=1) — bands ×2 Nyquist-relative
+	let h = dsp.remez(31, [0, 0.3, 0.4, 1], [1, 1, 0, 0])
+	let ref = [-0.0162538169, 0.1268497426, 0.2827148206, 0.3501906002, 0.2827148206, 0.1268497426, -0.0162538169]
+	for (let i = 0; i < 7; i++) almost(h[12 + i], ref[i], 1e-3)
+	// true equiripple: passband ripple and stopband attenuation from scipy: ±0.219 dB / -32.07 dB
+	let mag = f => {
+		let re = 0, im = 0
+		for (let n = 0; n < h.length; n++) { re += h[n] * Math.cos(Math.PI * f * n); im -= h[n] * Math.sin(Math.PI * f * n) }
+		return Math.hypot(re, im)
+	}
+	let pbMax = 0, sbMax = -Infinity
+	for (let f = 0; f <= 0.3; f += 0.0005) pbMax = Math.max(pbMax, Math.abs(20 * Math.log10(mag(f))))
+	for (let f = 0.4; f <= 1; f += 0.0005) sbMax = Math.max(sbMax, 20 * Math.log10(mag(f)))
+	ok(pbMax < 0.23, `passband ripple ±${pbMax.toFixed(3)} dB ≈ scipy 0.219`)
+	ok(sbMax < -31.9, `stopband ${sbMax.toFixed(1)} dB ≈ scipy -32.07`)
+})
+
+test('yulewalk — recovers exact AR(1) spectrum', () => {
+	// Target |1/(1 - 0.5e^{-jw})| is exactly representable at order 1:
+	// must return a = [1, -0.5] (prediction-error convention), b = [1, 0]
+	let N = 64, freqs = [], mags = []
+	for (let i = 0; i <= N; i++) {
+		let f = i / N, w = Math.PI * f
+		freqs.push(f)
+		mags.push(1 / Math.hypot(1 - 0.5 * Math.cos(w), 0.5 * Math.sin(w)))
+	}
+	let { b, a } = dsp.yulewalk(1, freqs, mags)
+	almost(a[0], 1, 1e-12)
+	almost(a[1], -0.5, 1e-3)
+	almost(b[0], 1, 1e-3)
+	almost(b[1], 0, 1e-3)
+})
+
+test('lattice — iir type inverts fir type (round-trip identity)', () => {
+	let k = [0.5, -0.3, 0.2]
+	let x = Float64Array.from({ length: 64 }, (_, i) => Math.sin(i * 0.7) + 0.3 * Math.sin(i * 2.1))
+	let y = Float64Array.from(x)
+	dsp.lattice(y, { k })                 // analysis (whitening, all-zero)
+	dsp.lattice(y, { k, type: 'iir' })    // synthesis (all-pole inverse)
+	for (let i = 0; i < x.length; i++) almost(y[i], x[i], 1e-12)
+})
+
+test('lattice — fir type equals direct-form prediction-error filter', () => {
+	// Step-up recursion k → A(z), then lattice(x) must equal FIR A(z) applied to x
+	let k = [0.5, -0.3, 0.2]
+	let a = [1]
+	for (let j = 0; j < k.length; j++) {
+		let prev = a.slice()
+		a = new Array(j + 2).fill(0)
+		a[0] = 1
+		for (let m = 1; m <= j; m++) a[m] = prev[m] + k[j] * prev[j + 1 - m]
+		a[j + 1] = k[j]
+	}
+	let x = Float64Array.from({ length: 48 }, (_, i) => Math.cos(i * 1.1))
+	let z = Float64Array.from(x)
+	dsp.lattice(z, { k })
+	for (let n = 0; n < x.length; n++) {
+		let d = 0
+		for (let m = 0; m < a.length; m++) if (n - m >= 0) d += a[m] * x[n - m]
+		almost(z[n], d, 1e-12)
+	}
+})
+
+test('warpedFir — warped delay line is allpass (unit magnitude)', () => {
+	// h = [0, 1] is a single warped delay = one first-order allpass:
+	// |H| = 1 at every frequency. Measure steady-state via quadrature projection.
+	for (let f of [0.1, 0.35, 0.62, 0.85]) {
+		let n = 8192, w = Math.PI * f
+		let sig = Float64Array.from({ length: n }, (_, i) => Math.sin(w * i))
+		dsp.warpedFir(sig, { coefs: [0, 1], lambda: 0.7 })
+		let ss = 0, sc = 0
+		for (let i = n / 2; i < n; i++) { ss += sig[i] * Math.sin(w * i); sc += sig[i] * Math.cos(w * i) }
+		let amp = 2 * Math.hypot(ss, sc) / (n / 2)
+		almost(amp, 1, 1e-3)
+	}
+})
+
+test('warpedFir — magnitude equals prototype FIR at warped frequency', () => {
+	// H_warped(e^jw) = H_fir(e^jφ(w)), φ = arg D(e^jw), D = (z^-1 - λ)/(1 - λz^-1)
+	let h = [0.25, 0.5, 0.25], lambda = 0.5
+	for (let f of [0.1, 0.4, 0.7]) {
+		let w = Math.PI * f
+		let dr = Math.cos(w) - lambda, di = -Math.sin(w)
+		let er = 1 - lambda * Math.cos(w), ei = lambda * Math.sin(w)
+		let phi = Math.atan2(di * er - dr * ei, dr * er + di * ei)
+		let target = Math.hypot(
+			h[0] + h[1] * Math.cos(phi) + h[2] * Math.cos(2 * phi),
+			h[1] * Math.sin(phi) + h[2] * Math.sin(2 * phi))
+		let n = 8192
+		let sig = Float64Array.from({ length: n }, (_, i) => Math.sin(w * i))
+		dsp.warpedFir(sig, { coefs: h, lambda })
+		let ss = 0, sc = 0
+		for (let i = n / 2; i < n; i++) { ss += sig[i] * Math.sin(w * i); sc += sig[i] * Math.cos(w * i) }
+		let amp = 2 * Math.hypot(ss, sc) / (n / 2)
+		almost(amp, target, 1e-3)
+	}
+})
+
+test('gaussianIir — zero-phase over the FULL array (edges included)', () => {
+	// Constant input must stay constant everywhere — including the last 3
+	// samples the old backward pass never touched
+	let data = new Float64Array(64).fill(1)
+	dsp.gaussianIir(data, { sigma: 4 })
+	for (let i = 0; i < 64; i++) almost(data[i], 1, 1e-6)
+	// Impulse response symmetric around the impulse (zero phase)
+	let imp = new Float64Array(129)
+	imp[64] = 1
+	dsp.gaussianIir(imp, { sigma: 5 })
+	for (let d = 1; d <= 20; d++) almost(imp[64 - d], imp[64 + d], 1e-9)
+	// Unit DC gain: coefficients sum to ~1
+	let sum = 0
+	for (let v of imp) sum += v
+	almost(sum, 1, 1e-3)
+})
+
+test('oneEuro — beta=0 is honored (pure one-pole, no speed adaptation)', () => {
+	let n = 128
+	let mk = () => Float64Array.from({ length: n }, (_, i) => (i >= 32 ? 1 : 0) + 0.01 * Math.sin(i * 2.5))
+	let a = mk(), b = mk()
+	dsp.oneEuro(a, { minCutoff: 1, beta: 0, fs: 120 })
+	dsp.oneEuro(b, { minCutoff: 1, fs: 120 })  // default beta 0.007
+	let differ = false
+	for (let i = 0; i < n; i++) if (Math.abs(a[i] - b[i]) > 1e-9) { differ = true; break }
+	ok(differ, 'beta: 0 must not be replaced by the default')
+	// beta=0: exactly a fixed-alpha one-pole at minCutoff (Casiez 2012 eq. 1-2)
+	let alpha = 1 / (1 + (120 / (2 * Math.PI * 1)))
+	let x = mk(), y = x[0]
+	let ref = new Float64Array(n)
+	for (let i = 0; i < n; i++) { y = alpha * x[i] + (1 - alpha) * y; ref[i] = y }
+	for (let i = 0; i < n; i++) almost(a[i], ref[i], 1e-12)
+})
+
+test('dynamicSmoothing — Simper 2016 self-modulating filter', () => {
+	// sensitivity=0 reduces to the static cascade; DC preserved
+	let dc = new Float64Array(256).fill(0.5)
+	dsp.dynamicSmoothing(dc, { fc: 10, sensitivity: 0, fs: 1000 })
+	almost(dc[255], 0.5, 1e-6)
+	// speed adaptation: with sensitivity, a step settles much faster
+	let mkStep = () => Float64Array.from({ length: 400 }, (_, i) => i >= 100 ? 1 : 0)
+	let slow = mkStep(), fast = mkStep()
+	dsp.dynamicSmoothing(slow, { fc: 2, sensitivity: 0, fs: 1000 })
+	dsp.dynamicSmoothing(fast, { fc: 2, sensitivity: 4, fs: 1000 })
+	let settle = arr => { for (let i = 100; i < 400; i++) if (arr[i] > 0.9) return i - 100; return 300 }
+	ok(settle(fast) < settle(slow) / 3, `adaptive settles ${settle(fast)} vs static ${settle(slow)} samples`)
+})
+
+test('movingAverage — pre-seeded memory is honored (no startup ramp)', () => {
+	let data = new Float64Array(8).fill(1)
+	let params = { memory: [1, 1, 1, 1] }
+	dsp.movingAverage(data, params)
+	for (let i = 0; i < 8; i++) almost(data[i], 1, 1e-12)
+})
+
+test('lms/nlms/rls — order change between calls reallocates state', () => {
+	let x = Float64Array.from({ length: 64 }, (_, i) => Math.sin(i * 0.3))
+	let d = Float64Array.from(x)
+	for (let fn of [dsp.lms, dsp.nlms, dsp.rls]) {
+		let params = { order: 8 }
+		fn(x, d, params)
+		params.order = 16
+		let out = fn(x, d, params)   // previously: TypeError (rls) or NaN (lms/nlms)
+		ok(out.every(isFinite), 'finite output after order change')
+		is(params.w.length, 16, 'weights reallocated to new order')
+	}
+})
+
+test('rls — covariance stays bounded through dead air (anti-windup)', () => {
+	// Sustained zero input: P /= lambda each step used to blow up unbounded
+	let params = { order: 4, lambda: 0.95, delta: 100 }
+	let silence = new Float64Array(512)
+	dsp.rls(silence, silence, params)
+	let trace = 0
+	for (let j = 0; j < 4; j++) trace += params.P[j][j]
+	ok(trace <= 4 * 100 + 1e-6, `trace(P) capped at N·delta (got ${trace.toFixed(1)})`)
+	// and it still adapts afterwards: identify a simple 2-tap system
+	let n = 2048
+	let inp = Float64Array.from({ length: n }, (_, i) => Math.sin(i * 1.1) + 0.5 * Math.sin(i * 0.37 + 1))
+	let des = new Float64Array(n)
+	for (let i = 1; i < n; i++) des[i] = 0.6 * inp[i] - 0.3 * inp[i - 1]
+	dsp.rls(inp, des, params)
+	almost(params.w[0], 0.6, 0.01)
+	almost(params.w[1], -0.3, 0.01)
+})
+
+test('levinson — matches scipy.linalg.solve_toeplitz 1.17.1', () => {
+	// solve_toeplitz((r[:3], r[:3]), -r[1:4]) for r = [2, 1.2, 0.6, 0.2]
+	// → a = [-0.650246305419, 0.051724137931, 0.064039408867], k = [-0.6, 0.09375, 0.064039408867]
+	let { a, k, error } = dsp.levinson([2, 1.2, 0.6, 0.2], 3)
+	almost(a[0], 1, 1e-12)
+	almost(a[1], -0.650246305419, 1e-9)
+	almost(a[2], 0.051724137931, 1e-9)
+	almost(a[3], 0.064039408867, 1e-9)
+	almost(k[0], -0.6, 1e-9)
+	almost(k[1], 0.09375, 1e-9)
+	almost(k[2], 0.064039408867, 1e-9)
+	almost(error, 1.26354679803, 1e-6)
+})
+
+test('isMinPhase / isStable — actually invoked on real designs', () => {
+	// minimumPhase output: zeros inside/on the unit circle (cepstral residue
+	// leaves circle-zeros ~1e-3 outside — hence the explicit tolerance);
+	// the original linear-phase FIR has reciprocal pairs far outside (≈1.63)
+	let h = dsp.firwin(31, 2000, 44100)
+	let hm = dsp.minimumPhase(h)
+	ok(dsp.isMinPhase(dsp.tf2sos(Array.from(hm), [1]), 0.01), 'minimumPhase output is minimum phase')
+	ok(!dsp.isMinPhase(dsp.tf2sos(Array.from(h), [1]), 0.01), 'linear-phase FIR is not minimum phase')
+	// isStable: any butterworth is stable; a pole outside the circle is not
+	ok(dsp.isStable(dsp.butterworth(6, 1000, 44100)), 'butterworth stable')
+	ok(!dsp.isStable([{ b0: 1, b1: 0, b2: 0, a1: -2.1, a2: 1.1 }]), 'exploding filter unstable')
+})
+
+test('svf — qualitative response of every mode', () => {
+	let fs = 44100, fc = 1000
+	let magAt = (type, f) => {
+		let n = 16384, w = 2 * Math.PI * f / fs
+		let sig = Float64Array.from({ length: n }, (_, i) => Math.sin(w * i))
+		dsp.svf(sig, { fc, Q: 0.707, fs, type })
+		let ss = 0, sc = 0
+		for (let i = n / 2; i < n; i++) { ss += sig[i] * Math.sin(w * i); sc += sig[i] * Math.cos(w * i) }
+		return 2 * Math.hypot(ss, sc) / (n / 2)
+	}
+	// notch: kills fc, passes the edges
+	ok(magAt('notch', fc) < 0.05, 'notch ~0 at fc')
+	ok(magAt('notch', 50) > 0.95 && magAt('notch', 20000) > 0.9, 'notch passes edges')
+	// bandpass: peaks at fc, drops at the edges
+	ok(magAt('bandpass', fc) > 0.6, 'bandpass strong at fc')
+	ok(magAt('bandpass', 50) < 0.1 && magAt('bandpass', 15000) < 0.2, 'bandpass drops at edges')
+	// allpass: unit magnitude everywhere
+	for (let f of [100, 1000, 8000]) almost(magAt('allpass', f), 1, 0.02)
+	// peak: unit magnitude at both extremes (low − high crossover shape)
+	ok(magAt('peak', 50) > 0.95 && magAt('peak', 20000) > 0.9, 'peak unity at extremes')
+})
+
+test('edge cases — empty input, NaN cutoff', () => {
+	// Empty input: processors return the empty array without crashing
+	for (let fn of [
+		d => dsp.filter(d, { coefs: dsp.biquad.lowpass(1000, 0.707, 44100) }),
+		d => dsp.filtfilt(d, { coefs: dsp.biquad.lowpass(1000, 0.707, 44100) }),
+		d => dsp.onePole(d, { fc: 100, fs: 44100 }),
+		d => dsp.movingAverage(d, {}),
+		d => dsp.median(d, {}),
+		d => dsp.gaussianIir(d, { sigma: 2 }),
+	]) {
+		let out = fn(new Float64Array(0))
+		is(out.length, 0, 'empty in, empty out')
+	}
+	// NaN/absent cutoff must throw, not silently design a NaN filter
+	throws(() => dsp.butterworth(4, NaN, 44100), 'butterworth NaN fc throws')
+	throws(() => dsp.chebyshev(4, undefined, 44100, 1), 'chebyshev missing fc throws')
+})
+
+test('warpedFir — lambda: 0 is honored (reduces to plain FIR)', () => {
+	// D(z) with λ=0 is a unit delay — the warped structure must equal direct
+	// convolution exactly; `lambda || 0.7` used to swallow the 0
+	let h = [0.5, 0.3, 0.15]
+	let x = Float64Array.from({ length: 32 }, (_, i) => Math.sin(i * 0.9))
+	let y = Float64Array.from(x)
+	dsp.warpedFir(y, { coefs: h, lambda: 0 })
+	for (let n = 0; n < x.length; n++) {
+		let d = 0
+		for (let m = 0; m < h.length; m++) if (n - m >= 0) d += h[m] * x[n - m]
+		almost(y[n], d, 1e-12)
+	}
+})
+
+// --- 2.4.0 compat surface (audit): pre-2.4 names stay importable ---
+test('compat: sosfilt_zi alias + poles subpath exports + dynamicSmoothing maxFc throws', async () => {
+	const idx = await import('./index.js')
+	is(idx.sosfilt_zi, idx.sosfiltZi, 'sosfilt_zi ≡ sosfiltZi')
+	const bw = await import('./iir/butterworth.js')
+	ok(typeof bw.poles === 'function', 'butterworth poles export')
+	const ch = await import('./iir/chebyshev.js')
+	ok(typeof ch.poles === 'function' && typeof ch.type2 === 'function', 'chebyshev poles + type2 exports')
+	const { default: dynamicSmoothing } = await import('./smooth/dynamic-smoothing.js')
+	let threw = false
+	try { dynamicSmoothing(new Float32Array(8), { minFc: 1, maxFc: 100, fs: 100 }) } catch (e) { threw = /maxFc/.test(e.message) }
+	ok(threw, 'maxFc rejected loudly (algorithm changed in 2.4)')
 })

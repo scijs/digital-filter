@@ -1,6 +1,7 @@
 /**
  * Upsample, FIR filter, downsample — the general multirate primitive.
- * Efficient polyphase implementation (no intermediate upsampled buffer).
+ * Direct evaluation without an intermediate upsampled buffer: each output
+ * taps only the input samples aligned to the upsample grid.
  *
  * @param {Float64Array|Array<number>} data - Input signal
  * @param {Float64Array|Array<number>} h - FIR filter coefficients

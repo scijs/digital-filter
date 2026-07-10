@@ -49,11 +49,16 @@ export function groupDelay (coefs, n, fs) {
 			let dar = -c.a1 * sinw - 2 * c.a2 * sin2w
 			let dai = -c.a1 * cosw - 2 * c.a2 * cos2w
 
-			// Group delay = Re{ (dB/dw)/B - (dA/dw)/A }
-			let numGD = (dbr * br + dbi * bi) / (br * br + bi * bi)
-			let denGD = (dar * ar + dai * ai) / (ar * ar + ai * ai)
+			// τ(w) = -dφ/dw, φ = arg(B) - arg(A); d(arg X)/dw = Im{X'/X}
+			// → τ = Im{A'/A} - Im{B'/B}, with Im{X'/X} = (X'i·Xr - X'r·Xi)/|X|²
+			let bMag = br * br + bi * bi
+			let aMag = ar * ar + ai * ai
+			// At an exact on-circle zero/pole the delay is singular — report 0 (scipy convention)
+			if (bMag < 1e-30 || aMag < 1e-30) { totalDelay = 0; break }
+			let numGD = (dbi * br - dbr * bi) / bMag
+			let denGD = (dai * ar - dar * ai) / aMag
 
-			totalDelay += numGD - denGD
+			totalDelay += denGD - numGD
 		}
 
 		delay[i] = totalDelay
@@ -80,6 +85,7 @@ export function phaseDelay (coefs, n, fs) {
 
 	let frequencies = new Float64Array(n)
 	let delay = new Float64Array(n)
+	let phase = new Float64Array(n)
 
 	for (let i = 0; i < n; i++) {
 		let w = i * Math.PI / n
@@ -100,8 +106,21 @@ export function phaseDelay (coefs, n, fs) {
 			totalPhase += Math.atan2(bi, br) - Math.atan2(ai, ar)
 		}
 
-		// Phase delay = -phase / omega (in samples)
-		delay[i] = w > 0 ? -totalPhase / w : 0
+		phase[i] = totalPhase
+	}
+
+	// Unwrap along the frequency axis (atan2 wraps at ±π, and higher-order
+	// filters accumulate more than π of phase), then delay = -φ/ω in samples
+	let offset = 0
+	for (let i = 1; i < n; i++) {
+		let jump = phase[i] + offset - phase[i - 1]
+		if (jump > Math.PI) offset -= 2 * Math.PI
+		else if (jump < -Math.PI) offset += 2 * Math.PI
+		phase[i] += offset
+	}
+	for (let i = 0; i < n; i++) {
+		let w = i * Math.PI / n
+		delay[i] = w > 0 ? -phase[i] / w : 0
 	}
 
 	return { frequencies, delay }
@@ -154,13 +173,18 @@ export function isStable (sos) {
 
 /**
  * Check if filter is minimum phase (all zeros inside or on unit circle).
+ * Zeros legitimately ON the circle (every FIR stopband zero) plus root-finder
+ * noise need headroom — pass a larger tol for numerically-derived filters
+ * (e.g. minimumPhase() output carries ~1e-3 cepstral residue).
  *
  * @param {Array<{b0:number,b1:number,b2:number,a1:number,a2:number}>} sos - SOS sections
+ * @param {number} [tol=1e-8] - Allowed excursion of |zero| beyond 1
  * @returns {boolean}
  */
-export function isMinPhase (sos) {
+export function isMinPhase (sos, tol) {
+	if (tol == null) tol = 1e-8
 	let {zeros} = sos2zpk(sos)
-	return zeros.every(z => z.re * z.re + z.im * z.im <= 1 + 1e-10)
+	return zeros.every(z => z.re * z.re + z.im * z.im <= (1 + tol) * (1 + tol))
 }
 
 /**

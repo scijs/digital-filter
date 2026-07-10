@@ -25,6 +25,7 @@ export default function butterworth (order, fc, fs, type) {
 }
 
 // Butterworth prototype poles (normalized LP at 1 rad/s, unit circle)
+export { butterworthPoles as poles }  // pre-2.4 subpath export kept
 function butterworthPoles (N) {
 	let poles = []
 	for (let m = 0; m < floor(N / 2); m++) {
@@ -35,4 +36,3 @@ function butterworthPoles (N) {
 	return poles
 }
 
-export { butterworthPoles as poles }

@@ -6,7 +6,8 @@
  * @param {'linear'|'constant'|'dc'} [type='linear'] - Type of trend to remove
  * @returns {Float64Array|Float32Array|Array<number>} Detrended data (same reference as input)
  */
-export default function detrend (data, type = 'linear') {
+export default function detrend (data, type) {
+	if (!type) type = 'linear'
 	let N = data.length
 	if (type === 'constant' || type === 'dc') {
 		let mean = 0

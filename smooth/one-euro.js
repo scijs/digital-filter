@@ -17,16 +17,20 @@ let {exp, abs, PI} = Math
  */
 export default function oneEuro (data, params) {
 	let minCutoff = params.minCutoff || 1
-	let beta = params.beta || 0.007
+	let beta = params.beta ?? 0.007   // ?? — beta 0 legitimately disables speed adaptation
 	let dCutoff = params.dCutoff || 1
 	let fs = params.fs || 60
 
 	let x = params.x != null ? params.x : data[0]
-	let dx = params.dx || 0
+	// Derivative uses the previous RAW sample (Casiez et al. 2012 reference
+	// implementation, lastRawValue()), not the previous filtered output
+	let xr = params.xr != null ? params.xr : data[0]
+	let dx = params.dx ?? 0
 
 	for (let i = 0; i < data.length; i++) {
-		// Estimate derivative
-		let rawDx = (data[i] - x) * fs
+		// Estimate derivative from raw input
+		let rawDx = (data[i] - xr) * fs
+		xr = data[i]
 		let aDx = smoothingFactor(dCutoff, fs)
 		dx = aDx * rawDx + (1 - aDx) * dx
 
@@ -40,6 +44,7 @@ export default function oneEuro (data, params) {
 	}
 
 	params.x = x
+	params.xr = xr
 	params.dx = dx
 	return data
 }

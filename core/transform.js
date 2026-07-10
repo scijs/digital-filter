@@ -22,6 +22,9 @@ export function polesSos (poles, fc, fs, type) {
 	if (!type) type = 'lowpass'
 	if (!fs) fs = 44100
 
+	let edge = edgeSections(fc, fs, type)
+	if (edge) return edge
+
 	if (type === 'lowpass' || type === 'highpass') {
 		let K = tan(PI * fc / fs)
 		let C = 1 / K
@@ -48,6 +51,9 @@ export function poleZerosSos (poles, zeros, fc, fs, type) {
 	if (!type) type = 'lowpass'
 	if (!fs) fs = 44100
 
+	let edge = edgeSections(fc, fs, type)
+	if (edge) return edge
+
 	if (type === 'lowpass' || type === 'highpass') {
 		let K = tan(PI * fc / fs)
 		let C = 1 / K
@@ -64,6 +70,36 @@ export function poleZerosSos (poles, zeros, fc, fs, type) {
 	}
 
 	throw Error('Unknown type: ' + type)
+}
+
+// Degenerate cutoffs resolve to silence/pass sections (same edge semantics as
+// iir/biquad.js) instead of NaN coefficients from tan() blowing up.
+const SILENCE = () => [{b0: 0, b1: 0, b2: 0, a1: 0, a2: 0}]
+const PASS = () => [{b0: 1, b1: 0, b2: 0, a1: 0, a2: 0}]
+
+function edgeSections (fc, fs, type) {
+	let nyq = fs / 2
+	// NaN/undefined would sail through the <=/>= guards into tan() and produce
+	// silently-NaN coefficients — reject loudly instead
+	if (type === 'lowpass' || type === 'highpass') {
+		if (!Number.isFinite(fc)) throw Error(`transform: fc must be a finite number (got ${fc})`)
+	} else if (!Array.isArray(fc) || !Number.isFinite(fc[0]) || !Number.isFinite(fc[1])) {
+		throw Error(`transform: ${type} needs fc = [fLow, fHigh] (got ${fc})`)
+	}
+	if (type === 'lowpass') {
+		if (fc <= 0) return SILENCE()
+		if (fc >= nyq) return PASS()
+	} else if (type === 'highpass') {
+		if (fc <= 0) return PASS()
+		if (fc >= nyq) return SILENCE()
+	} else if (type === 'bandpass') {
+		let [lo, hi] = fc
+		if (!(lo > 0 && hi > lo && hi < nyq)) return SILENCE()
+	} else if (type === 'bandstop') {
+		let [lo, hi] = fc
+		if (!(lo > 0 && hi > lo && hi < nyq)) return PASS()
+	}
+	return null
 }
 
 export { prewarp }
@@ -227,97 +263,82 @@ function secondOrderZerosSection (sigma, omega, zero, C, hp) {
 // ────── Bandpass via analog LP→BP transform ──────
 
 function bpSos (poles, fLow, fHigh, fs) {
+	// All-pole prototype: every mapped pole pair gets one zero at s=0
+	return bpZerosSos(poles, [], fLow, fHigh, fs)
+}
+
+function bpZerosSos (poles, zeros, fLow, fHigh, fs) {
+	// LP→BP on both poles and finite zeros (scipy lp2bp_zpk): each prototype
+	// point q maps through s² - B·q·s + w0² = 0; the degree deficit becomes
+	// zeros at s=0. Without this, elliptic/Type-II bandpass loses its stopband.
 	let wL = prewarp(fLow, fs), wH = prewarp(fHigh, fs)
 	let w0 = sqrt(wL * wH)
 	let B = wH - wL
 	let Cs = 2 * fs
-	let zeroAtOrigin = {re: 0, im: 0}
+
+	let polePairs = mapPrototypePairs(poles, q => lpToBpPole(q, w0, B))
+	let zeroPairs = mapPrototypePairs(zeros, q => lpToBpPole(q, w0, B))
 
 	let sections = []
-
-	for (let i = 0; i < poles.length; i++) {
-		let sigma = poles[i][0], omega = poles[i][1]
-
-		if (omega === 0) {
-			// Real prototype pole → 2 BP poles (1 conjugate pair) + 1 zero at s=0
-			let p = {re: sigma, im: 0}
-			let pair = lpToBpPole(p, w0, B)
-			// One zero at s=0 → s numerator → bilinear gives C(1-z^-1)(1+z^-1)
-			sections.push(biquadWithOriginZero(pair[0], pair[1], Cs))
-		} else {
-			// Conjugate prototype pair → 4 BP poles (2 conjugate pairs) + 2 zeros at s=0
-			let p = {re: sigma, im: omega}
-			let pair1 = lpToBpPole(p, w0, B)
-			let pConj = {re: sigma, im: -omega}
-			let pair2 = lpToBpPole(pConj, w0, B)
-
-			let allPoles = [pair1[0], pair1[1], pair2[0], pair2[1]]
-			let pairs = groupConjugatePairs(allPoles)
-
-			// Each section gets one zero at s=0
-			for (let j = 0; j < pairs.length; j++) {
-				sections.push(biquadWithOriginZero(pairs[j][0], pairs[j][1], Cs))
-			}
-		}
+	for (let i = 0; i < polePairs.length; i++) {
+		let pp = polePairs[i]
+		let zp = i < zeroPairs.length ? zeroPairs[i] : null
+		// Leftover pole pairs carry the LP prototype's degree deficit: one zero at s=0
+		sections.push(zp
+			? biquadFromComplexPoles(pp[0], pp[1], zp[0], zp[1], 1, Cs)
+			: biquadWithOriginZero(pp[0], pp[1], Cs))
 	}
 
-	// Normalize: set gain to 1 at center frequency
 	normalizeAtFreq(sections, sqrt(fLow * fHigh), fs)
-
 	return sections
 }
 
-function bpZerosSos (poles, zeros, fLow, fHigh, fs) {
-	// For now, approximate BP with zeros via LP→BP transform on poles only
-	// Full zero support for BP is complex and rarely needed
-	return bpSos(poles, fLow, fHigh, fs)
+// Map prototype [sigma, omega] entries (omega>0 = conjugate pair) through an
+// analog point transform returning 2 mapped points each; group results into
+// conjugate pairs → one biquad section per pair.
+function mapPrototypePairs (protos, mapPoint) {
+	let pairs = []
+	for (let i = 0; i < protos.length; i++) {
+		let sigma = protos[i][0], omega = protos[i][1]
+		if (omega === 0) {
+			pairs.push(mapPoint({re: sigma, im: 0}))
+		} else {
+			let m1 = mapPoint({re: sigma, im: omega})
+			let m2 = mapPoint({re: sigma, im: -omega})
+			pairs.push(...groupConjugatePairs([m1[0], m1[1], m2[0], m2[1]]))
+		}
+	}
+	return pairs
 }
 
 // ────── Bandstop via analog LP→BS transform ──────
 
 function bsSos (poles, fLow, fHigh, fs) {
+	// All-pole prototype: every mapped pole pair gets zeros at ±j·w0
+	return bsZerosSos(poles, [], fLow, fHigh, fs)
+}
+
+function bsZerosSos (poles, zeros, fLow, fHigh, fs) {
+	// LP→BS on both poles and finite zeros (scipy lp2bs_zpk): each prototype
+	// point q maps through s² - (B/q)·s + w0² = 0; the degree deficit becomes
+	// zero pairs at ±j·w0.
 	let wL = prewarp(fLow, fs), wH = prewarp(fHigh, fs)
 	let w0 = sqrt(wL * wH)
 	let B = wH - wL
 	let Cs = 2 * fs
 
+	let polePairs = mapPrototypePairs(poles, q => lpToBsPole(q, w0, B))
+	let zeroPairs = mapPrototypePairs(zeros, q => lpToBsPole(q, w0, B))
+
 	let sections = []
-
-	for (let i = 0; i < poles.length; i++) {
-		let sigma = poles[i][0], omega = poles[i][1]
-
-		if (omega === 0) {
-			let p = {re: sigma, im: 0}
-			let pair = lpToBsPole(p, w0, B)
-			sections.push(biquadFromComplexPoles(pair[0], pair[1], {re: 0, im: w0}, {re: 0, im: -w0}, 1, Cs))
-		} else {
-			let p = {re: sigma, im: omega}
-			let pair1 = lpToBsPole(p, w0, B)
-			let pConj = {re: sigma, im: -omega}
-			let pair2 = lpToBsPole(pConj, w0, B)
-
-			let allPoles = [pair1[0], pair1[1], pair2[0], pair2[1]]
-			let pairs = groupConjugatePairs(allPoles)
-
-			for (let j = 0; j < pairs.length; j++) {
-				// Each BS section gets zeros at ±jw0
-				sections.push(biquadFromComplexPoles(
-					pairs[j][0], pairs[j][1],
-					{re: 0, im: w0}, {re: 0, im: -w0},
-					1, Cs
-				))
-			}
-		}
+	for (let i = 0; i < polePairs.length; i++) {
+		let pp = polePairs[i]
+		let zp = i < zeroPairs.length ? zeroPairs[i] : [{re: 0, im: w0}, {re: 0, im: -w0}]
+		sections.push(biquadFromComplexPoles(pp[0], pp[1], zp[0], zp[1], 1, Cs))
 	}
 
-	// Normalize: set gain to 1 at DC
 	normalizeAtFreq(sections, 0, fs)
-
 	return sections
-}
-
-function bsZerosSos (poles, zeros, fLow, fHigh, fs) {
-	return bsSos(poles, fLow, fHigh, fs)
 }
 
 // ────── Bilinear helpers for BP/BS ──────
@@ -377,11 +398,6 @@ function biquadFromComplexPoles (p1, p2, z1, z2, gain, Cs) {
 	}
 }
 
-// Simplified version using pole pair coefficients directly
-function biquadFromPoleCoefs (p1, p2, gain, Cs) {
-	return biquadFromComplexPoles(p1, p2, null, null, gain, Cs)
-}
-
 // Group 4 poles into 2 conjugate pairs
 function groupConjugatePairs (poles) {
 	let used = [false, false, false, false]
@@ -406,8 +422,10 @@ function groupConjugatePairs (poles) {
 	return pairs
 }
 
-// Normalize sections so combined gain = 1 at given frequency
-function normalizeAtFreq (sections, freq, fs) {
+// Normalize sections so combined gain = 1 at given frequency.
+// Exported for designers that must renormalize at their passband reference
+// (DC for lowpass, Nyquist for highpass — bp/bs are normalized here already).
+export function normalizeAtFreq (sections, freq, fs) {
 	let w = 2 * PI * freq / fs
 	let cosw = cos(w), sinw = sin(w)
 	let cos2w = cos(2 * w), sin2w = sin(2 * w)

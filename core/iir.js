@@ -11,6 +11,11 @@
  */
 export default function iir (data, params) {
 	let { b, a } = params
+	if (!b || !a) {
+		throw Error(params.coefs
+			? 'iir: got SOS coefs — use filter(data, {coefs})'
+			: 'iir: params must carry {b, a} coefficient arrays')
+	}
 	let nb = b.length, na = a.length
 	let order = Math.max(nb, na) - 1
 

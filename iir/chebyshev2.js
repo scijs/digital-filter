@@ -1,4 +1,4 @@
-import { poleZerosSos } from '../core/transform.js'
+import { poleZerosSos, normalizeAtFreq } from '../core/transform.js'
 
 let {sin, cos, sqrt, pow, floor, sinh, cosh, asinh, PI} = Math
 
@@ -49,15 +49,12 @@ export default function chebyshev2 (order, fc, fs, attenuation, type) {
 
 	let sections = poleZerosSos(poles, zeros, fc, fs, type)
 
-	// Normalize DC gain to 1 (Type II has flat passband)
-	let dcGain = 1
-	for (let s of sections) dcGain *= (s.b0 + s.b1 + s.b2) / (1 + s.a1 + s.a2)
-	if (dcGain !== 0 && dcGain !== 1) {
-		let scale = 1 / dcGain
-		sections[0].b0 *= scale
-		sections[0].b1 *= scale
-		sections[0].b2 *= scale
-	}
+	// Normalize unity gain at the passband reference: DC for lowpass, Nyquist
+	// for highpass. DC would be a stopband ripple point for highpass — scaling
+	// it to 1 lifts the whole response by the stopband attenuation.
+	// Bandpass/bandstop are normalized inside the transform already.
+	if (type === 'lowpass') normalizeAtFreq(sections, 0, fs)
+	else if (type === 'highpass') normalizeAtFreq(sections, fs / 2, fs)
 
 	return sections
 }

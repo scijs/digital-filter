@@ -17,9 +17,8 @@ export default function cic (data, R, N) {
 	let outLen = Math.floor(len / R)
 	let output = new Float64Array(outLen)
 
-	// Comb state (operates at output rate)
-	let combState = new Array(N)
-	for (let i = 0; i < N; i++) combState[i] = new Float64Array(2) // [current, previous]
+	// Comb state (operates at output rate): previous input of each stage
+	let combState = new Float64Array(N)
 
 	let outIdx = 0
 	for (let i = 0; i < len; i++) {
@@ -35,8 +34,8 @@ export default function cic (data, R, N) {
 			// Comb cascade (at output rate)
 			let y = x
 			for (let j = 0; j < N; j++) {
-				let prev = combState[j][0]
-				combState[j][0] = y
+				let prev = combState[j]
+				combState[j] = y
 				y = y - prev
 			}
 			output[outIdx++] = y / Math.pow(R, N) // normalize by R^N

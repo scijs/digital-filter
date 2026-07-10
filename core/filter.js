@@ -1,10 +1,7 @@
 /**
- * Biquad cascade (SOS) filter, Direct Form II Transposed
+ * Biquad cascade (SOS) filtering — Direct Form II Transposed.
  *
  * @module  digital-filter/filter
- * @param {Float64Array|Float32Array|Array<number>} data - Input samples (modified in-place)
- * @param {{coefs: Array<{b0:number,b1:number,b2:number,a1:number,a2:number}>|{b0:number,b1:number,b2:number,a1:number,a2:number}, state?: Array<[number,number]>}} params - Filter coefficients and optional state
- * @returns {Float64Array|Float32Array|Array<number>} Filtered data (same reference as input)
  */
 
 /**
@@ -24,7 +21,7 @@
  * @param {Array<{b0:number,b1:number,b2:number,a1:number,a2:number}>|{b0:number,b1:number,b2:number,a1:number,a2:number}} sos - SOS sections
  * @returns {Array<[number,number]>} Initial state for each section
  */
-export function sosfilt_zi (sos) {
+export function sosfiltZi (sos) {
 	if (!Array.isArray(sos)) sos = [sos]
 	let state = []
 	let x = 1 // input to first section is 1.0
@@ -46,9 +43,21 @@ export function sosfilt_zi (sos) {
 	return state
 }
 
+/**
+ * @param {Float64Array|Float32Array|Array<number>} data - Input samples (modified in-place)
+ * @param {{coefs: Array<{b0,b1,b2,a1,a2}>|{b0,b1,b2,a1,a2}, state?: Array<[number,number]>}} params - SOS coefficients and optional state (persists between calls)
+ * @returns {Float64Array|Float32Array|Array<number>} Filtered data (same reference as input)
+ */
 export default function filter(data, params) {
 	let coefs = params.coefs
 	if (!Array.isArray(coefs)) coefs = [coefs]
+	// Fail fast on the {b, a} transfer-function shape (yulewalk/thiran output):
+	// silently reading undefined b0/a1 would produce garbage, not an error
+	if (coefs[0] == null || coefs[0].b0 == null) {
+		throw Error(params.coefs && params.coefs.b && params.coefs.a
+			? 'filter: got a {b, a} transfer function — use iir(data, {b, a}) or convert with tf2sos(b, a)'
+			: 'filter: params.coefs must be SOS section(s) {b0,b1,b2,a1,a2}')
+	}
 
 	let n = coefs.length
 

@@ -33,13 +33,23 @@ export default function resample (data, p, q, opts) {
 	// Scale by upsampling factor to preserve amplitude
 	for (let i = 0; i < h.length; i++) h[i] *= p
 
+	// Delay compensation must remove an INTEGER number of output samples:
+	// zero-prepad h until the group delay divides q (scipy resample_poly),
+	// otherwise the output is misaligned by a fraction of a sample.
+	let delay = (numtaps - 1) / 2
+	let prePad = (q - delay % q) % q
+	if (prePad) {
+		let hp = new Float64Array(prePad + h.length)
+		hp.set(h, prePad)
+		h = hp
+		delay += prePad
+	}
+
 	let out = upfirdn(data, h, p, q)
 
 	// Trim to expected length: ceil(data.length * p / q)
 	let expected = Math.ceil(data.length * p / q)
-	// Center the output (skip filter delay)
-	let delay = Math.floor((numtaps - 1) / 2)
-	let startIdx = Math.floor(delay / q)
+	let startIdx = delay / q
 	let result = new Float64Array(expected)
 	for (let i = 0; i < expected; i++) {
 		let idx = startIdx + i

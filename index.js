@@ -68,7 +68,7 @@ export { default as resample } from './multirate/resample.js'
 // Analysis & conversion
 export { groupDelay, phaseDelay, impulseResponse, stepResponse, isStable, isMinPhase, isFir, isLinPhase } from './core/analysis.js'
 export { sos2zpk, sos2tf, tf2zpk, tf2sos, zpk2sos, zpk2tf } from './core/convert.js'
-export { sosfilt_zi } from './core/filter.js'
+export { sosfiltZi, sosfiltZi as sosfilt_zi } from './core/filter.js'  // sosfilt_zi: pre-2.4 name kept as alias
 export { default as detrend } from './core/detrend.js'
 export { default as residue } from './core/residue.js'
 export { tf2ss, ss2tf } from './core/statespace.js'

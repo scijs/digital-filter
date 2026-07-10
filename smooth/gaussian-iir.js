@@ -30,14 +30,21 @@ export default function gaussianIir (data, params) {
 
 	let n = data.length
 
-	// Forward pass
-	for (let i = 3; i < n; i++) {
-		data[i] = B * data[i] + (b1 * data[i-1] + b2 * data[i-2] + b3 * data[i-3]) / b0
+	// Forward pass — constant-extension warm-up (virtual history = data[0]),
+	// so every sample is processed and DC is preserved at the edges
+	let y1 = data[0], y2 = data[0], y3 = data[0]
+	for (let i = 0; i < n; i++) {
+		let y = B * data[i] + (b1 * y1 + b2 * y2 + b3 * y3) / b0
+		data[i] = y
+		y3 = y2; y2 = y1; y1 = y
 	}
 
-	// Backward pass (zero-phase)
-	for (let i = n - 4; i >= 0; i--) {
-		data[i] = B * data[i] + (b1 * data[i+1] + b2 * data[i+2] + b3 * data[i+3]) / b0
+	// Backward pass (zero-phase) — virtual future = data[n-1]
+	y1 = data[n - 1]; y2 = data[n - 1]; y3 = data[n - 1]
+	for (let i = n - 1; i >= 0; i--) {
+		let y = B * data[i] + (b1 * y1 + b2 * y2 + b3 * y3) / b0
+		data[i] = y
+		y3 = y2; y2 = y1; y1 = y
 	}
 
 	return data

@@ -1,8 +1,9 @@
 let {sin, cos, sqrt, pow, PI} = Math
 
-let SILENCE = { b0: 0, b1: 0, b2: 0, a1: 0, a2: 0 }
-let PASS = { b0: 1, b1: 0, b2: 0, a1: 0, a2: 0 }
-let INVERT = { b0: -1, b1: 0, b2: 0, a1: 0, a2: 0 }
+// Factories, not shared constants — callers may mutate the returned object
+let SILENCE = () => ({ b0: 0, b1: 0, b2: 0, a1: 0, a2: 0 })
+let PASS = () => ({ b0: 1, b1: 0, b2: 0, a1: 0, a2: 0 })
+let INVERT = () => ({ b0: -1, b1: 0, b2: 0, a1: 0, a2: 0 })
 let gain = A2 => ({ b0: A2, b1: 0, b2: 0, a1: 0, a2: 0 })
 
 function norm (b0, b1, b2, a0, a1, a2) {
@@ -23,8 +24,9 @@ function intermediates (fc, Q, fs) {
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function lowpass (fc, Q, fs) {
-	if (fc <= 0) return SILENCE
-	if (fc >= fs / 2) return PASS
+	if (!fs) fs = 44100
+	if (fc <= 0) return SILENCE()
+	if (fc >= fs / 2) return PASS()
 	let { cosw, alpha } = intermediates(fc, Q, fs)
 	return norm(
 		(1 - cosw) / 2, 1 - cosw, (1 - cosw) / 2,
@@ -39,8 +41,9 @@ export function lowpass (fc, Q, fs) {
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function highpass (fc, Q, fs) {
-	if (fc <= 0) return PASS
-	if (fc >= fs / 2) return SILENCE
+	if (!fs) fs = 44100
+	if (fc <= 0) return PASS()
+	if (fc >= fs / 2) return SILENCE()
 	let { cosw, alpha } = intermediates(fc, Q, fs)
 	return norm(
 		(1 + cosw) / 2, -(1 + cosw), (1 + cosw) / 2,
@@ -49,14 +52,16 @@ export function highpass (fc, Q, fs) {
 }
 
 /**
+ * Constant-skirt-gain bandpass — peak gain = Q (RBJ cookbook BPF variant 1).
  * @param {number} fc - Center frequency in Hz
  * @param {number} Q - Quality factor
  * @param {number} fs - Sample rate in Hz
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function bandpass (fc, Q, fs) {
-	if (fc <= 0 || fc >= fs / 2) return SILENCE
-	if (Q <= 0) return SILENCE
+	if (!fs) fs = 44100
+	if (fc <= 0 || fc >= fs / 2) return SILENCE()
+	if (Q <= 0) return SILENCE()
 	let { sinw, cosw, alpha } = intermediates(fc, Q, fs)
 	return norm(
 		sinw / 2, 0, -sinw / 2,
@@ -65,15 +70,16 @@ export function bandpass (fc, Q, fs) {
 }
 
 /**
- * Constant-skirt-gain bandpass (peak gain = Q).
+ * Constant-0dB-peak-gain bandpass (RBJ cookbook BPF variant 2).
  * @param {number} fc - Center frequency in Hz
  * @param {number} Q - Quality factor
  * @param {number} fs - Sample rate in Hz
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function bandpass2 (fc, Q, fs) {
-	if (fc <= 0 || fc >= fs / 2) return SILENCE
-	if (Q <= 0) return PASS
+	if (!fs) fs = 44100
+	if (fc <= 0 || fc >= fs / 2) return SILENCE()
+	if (Q <= 0) return PASS()
 	let { cosw, alpha } = intermediates(fc, Q, fs)
 	return norm(
 		alpha, 0, -alpha,
@@ -88,8 +94,9 @@ export function bandpass2 (fc, Q, fs) {
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function notch (fc, Q, fs) {
-	if (fc <= 0 || fc >= fs / 2) return PASS
-	if (Q <= 0) return SILENCE
+	if (!fs) fs = 44100
+	if (fc <= 0 || fc >= fs / 2) return PASS()
+	if (Q <= 0) return SILENCE()
 	let { cosw, alpha } = intermediates(fc, Q, fs)
 	return norm(
 		1, -2 * cosw, 1,
@@ -104,8 +111,9 @@ export function notch (fc, Q, fs) {
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function allpass (fc, Q, fs) {
-	if (fc <= 0 || fc >= fs / 2) return PASS
-	if (Q <= 0) return INVERT
+	if (!fs) fs = 44100
+	if (fc <= 0 || fc >= fs / 2) return PASS()
+	if (Q <= 0) return INVERT()
 	let { cosw, alpha } = intermediates(fc, Q, fs)
 	return norm(
 		1 - alpha, -2 * cosw, 1 + alpha,
@@ -121,7 +129,8 @@ export function allpass (fc, Q, fs) {
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function peaking (fc, Q, fs, dBgain) {
-	if (fc <= 0 || fc >= fs / 2) return PASS
+	if (!fs) fs = 44100
+	if (fc <= 0 || fc >= fs / 2) return PASS()
 	if (Q <= 0) return gain(pow(10, dBgain / 20))
 	let { cosw, alpha } = intermediates(fc, Q, fs)
 	let A = pow(10, dBgain / 40)
@@ -139,8 +148,9 @@ export function peaking (fc, Q, fs, dBgain) {
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function lowshelf (fc, Q, fs, dBgain) {
+	if (!fs) fs = 44100
 	let A = pow(10, dBgain / 40)
-	if (fc <= 0) return PASS
+	if (fc <= 0) return PASS()
 	if (fc >= fs / 2) return gain(A * A)
 	let { cosw, alpha } = intermediates(fc, Q, fs)
 	let s = 2 * sqrt(A) * alpha
@@ -162,9 +172,10 @@ export function lowshelf (fc, Q, fs, dBgain) {
  * @returns {{b0: number, b1: number, b2: number, a1: number, a2: number}}
  */
 export function highshelf (fc, Q, fs, dBgain) {
+	if (!fs) fs = 44100
 	let A = pow(10, dBgain / 40)
 	if (fc <= 0) return gain(A * A)
-	if (fc >= fs / 2) return PASS
+	if (fc >= fs / 2) return PASS()
 	let { cosw, alpha } = intermediates(fc, Q, fs)
 	let s = 2 * sqrt(A) * alpha
 	return norm(

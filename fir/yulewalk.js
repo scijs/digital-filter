@@ -4,6 +4,8 @@
  * @module  digital-filter/yulewalk
  */
 
+import levinson from '../adaptive/levinson.js'
+
 let { cos, sin, sqrt, PI } = Math
 
 /**
@@ -15,9 +17,11 @@ let { cos, sin, sqrt, PI } = Math
 export default function yulewalk (order, frequencies, magnitudes) {
 	let N = 512
 
-	// Interpolate desired magnitude to dense grid
-	let H = new Float64Array(N)
-	for (let i = 0; i < N; i++) {
+	// Interpolate desired magnitude onto a dense grid over [0, Nyquist]:
+	// grid index i ↔ f = i/N ↔ w = π·i/N (the response is symmetric, so only
+	// the half-spectrum is sampled — using the full circle would alias)
+	let H = new Float64Array(N + 1)
+	for (let i = 0; i <= N; i++) {
 		let f = i / N
 		let j = 0
 		while (j < frequencies.length - 1 && frequencies[j + 1] < f) j++
@@ -26,53 +30,38 @@ export default function yulewalk (order, frequencies, magnitudes) {
 		H[i] = magnitudes[j] + t * (magnitudes[j + 1] - magnitudes[j])
 	}
 
-	// Autocorrelation of desired response via IDFT
+	// Autocorrelation of the desired power spectrum:
+	// R[k] = (1/π)∫₀^π H²(w)·cos(kw) dw, trapezoid rule on w = π·i/N
 	let R = new Float64Array(order + 1)
 	for (let k = 0; k <= order; k++) {
 		let sum = 0
-		for (let i = 0; i < N; i++) sum += H[i] * H[i] * cos(2 * PI * k * i / N)
+		for (let i = 0; i <= N; i++) {
+			let wgt = (i === 0 || i === N) ? 0.5 : 1
+			sum += wgt * H[i] * H[i] * cos(PI * k * i / N)
+		}
 		R[k] = sum / N
 	}
 
 	// Solve Yule-Walker equations via Levinson-Durbin
-	let a = levinsonDurbin(R, order)
+	let a = levinson(R, order).a
 
-	// Compute numerator by matching spectral envelope
+	// Numerator: zero-phase cosine-series fit of B(w) ≈ H(w)·|A(w)|
 	let b = new Float64Array(order + 1)
 	for (let k = 0; k <= order; k++) {
 		let sum = 0
-		for (let i = 0; i < N; i++) {
-			let w = 2 * PI * i / N
+		for (let i = 0; i <= N; i++) {
+			let w = PI * i / N
 			let ar = 1, ai = 0
 			for (let j = 1; j <= order; j++) {
 				ar += a[j] * cos(j * w)
 				ai -= a[j] * sin(j * w)
 			}
 			let Amag = sqrt(ar * ar + ai * ai)
-			sum += H[i] * Amag * cos(k * w)
+			let wgt = (i === 0 || i === N) ? 0.5 : 1
+			sum += wgt * H[i] * Amag * cos(k * w) * (k === 0 ? 1 : 2)
 		}
 		b[k] = sum / N
 	}
 
-	return { b: Float64Array.from(b), a: Float64Array.from([1, ...a.slice(1)]) }
-}
-
-function levinsonDurbin (R, order) {
-	let a = new Float64Array(order + 1)
-	a[0] = 1
-	let E = R[0]
-
-	for (let i = 1; i <= order; i++) {
-		let lambda = 0
-		for (let j = 1; j < i; j++) lambda += a[j] * R[i - j]
-		lambda = (R[i] - lambda) / E
-
-		let prev = Float64Array.from(a)
-		a[i] = lambda
-		for (let j = 1; j < i; j++) a[j] = prev[j] - lambda * prev[i - j]
-
-		E *= (1 - lambda * lambda)
-	}
-
-	return a
+	return { b: Float64Array.from(b), a: Float64Array.from(a) }
 }

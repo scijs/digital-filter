@@ -1,14 +1,20 @@
 /**
- * Compute frequency response of SOS filter sections.
+ * Compute frequency response of SOS filter sections, or of a {b, a} transfer
+ * function (the shape yulewalk/thiran return, scipy.signal.freqz style).
  *
- * @param {Array<{b0:number,b1:number,b2:number,a1:number,a2:number}>|{b0:number,b1:number,b2:number,a1:number,a2:number}} coefs - SOS section(s)
+ * @param {Array<{b0,b1,b2,a1,a2}>|{b0,b1,b2,a1,a2}|{b: ArrayLike, a: ArrayLike}} coefs - SOS section(s) or transfer function
  * @param {number} [n=512] - Number of frequency points
  * @param {number} [fs=44100] - Sample rate in Hz
  * @returns {{frequencies: Float64Array, magnitude: Float64Array, phase: Float64Array}}
  */
 export default function freqz (coefs, n, fs) {
 	if (!fs) fs = 44100
-	if (!Array.isArray(coefs)) coefs = [coefs]
+	let tf = null
+	if (!Array.isArray(coefs)) {
+		if (coefs.b && coefs.a) tf = coefs
+		else if (coefs.b0 == null) throw Error('freqz: coefs must be SOS ({b0,b1,b2,a1,a2}) or a {b, a} transfer function')
+		coefs = tf ? [] : [coefs]
+	}
 
 	// n can be a number (evenly spaced) or an array of Hz values
 	let freqArr = null
@@ -32,6 +38,15 @@ export default function freqz (coefs, n, fs) {
 
 		let totalMag = 1
 		let totalPhase = 0
+
+		if (tf) {
+			// Polynomial ratio B(e^-jw)/A(e^-jw), coefficients ascending z^-1
+			let br = 0, bi = 0, ar = 0, ai = 0
+			for (let k = 0; k < tf.b.length; k++) { br += tf.b[k] * Math.cos(k * w); bi -= tf.b[k] * Math.sin(k * w) }
+			for (let k = 0; k < tf.a.length; k++) { ar += tf.a[k] * Math.cos(k * w); ai -= tf.a[k] * Math.sin(k * w) }
+			totalMag = Math.sqrt((br * br + bi * bi) / (ar * ar + ai * ai))
+			totalPhase = Math.atan2(bi, br) - Math.atan2(ai, ar)
+		}
 
 		for (let j = 0; j < coefs.length; j++) {
 			let c = coefs[j]

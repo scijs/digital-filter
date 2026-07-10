@@ -15,8 +15,12 @@ export default function nlms (input, desired, params) {
 	let mu = params.mu || 0.5
 	let eps = params.eps || 1e-8
 
-	if (!params.w) params.w = new Float64Array(N)
-	if (!params.buf) params.buf = new Float64Array(N)
+	// (Re)allocate state when absent or when order changed between calls
+	if (!params.w || params.w.length !== N) {
+		params.w = new Float64Array(N)
+		params.buf = new Float64Array(N)
+		params.ptr = 0
+	}
 
 	let w = params.w
 	let buf = params.buf

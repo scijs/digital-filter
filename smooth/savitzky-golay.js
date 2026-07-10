@@ -1,3 +1,15 @@
+/**
+ * Savitzky-Golay smoothing: local least-squares polynomial fit as an FIR.
+ * Edges use clamp-to-boundary (nearest) padding — simpler than
+ * scipy.signal.savgol_filter's default mode='interp', which refits a
+ * polynomial on each edge window; interior samples are identical.
+ *
+ * @module  digital-filter/savitzky-golay
+ * @param {Float64Array} data - Input (modified in-place)
+ * @param {object} params - { windowSize: odd window length (default 5),
+ *   degree: polynomial order (default 2), derivative: order 0..degree (default 0) }
+ * @returns {Float64Array} data
+ */
 export default function savitzkyGolay(data, params) {
 	let m = params.windowSize || 5
 	let p = params.degree || 2

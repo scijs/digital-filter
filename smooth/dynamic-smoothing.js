@@ -1,49 +1,42 @@
 /**
- * Dynamic smoothing filter. Cutoff increases when signal changes fast, decreases when stable.
- * Based on Andrew Simper's approach.
+ * Dynamic smoothing — self-modulating lowpass: cutoff opens when the signal
+ * moves fast, closes when it is stable. Implements the "efficient" algorithm
+ * from Andrew Simper, "Dynamic Smoothing Using Self Modulating Filter"
+ * (Cytomic technical paper, 2016): two cascaded one-pole stages whose shared
+ * coefficient g is driven by the band difference between them,
+ *   g = min(g0 + sensitivity·|low1 - low2|, 1)
  *
  * @module  digital-filter/dynamic-smoothing
  */
 
-let { abs, PI, tan } = Math
+let { abs, min, tan, PI } = Math
 
 /**
  * @param {Float64Array} data - Input (modified in-place)
- * @param {object} params - { minFc, maxFc, sensitivity, fs }
+ * @param {object} params - { fc: base cutoff Hz (default 1), sensitivity (default 1, 0 = plain lowpass), fs }
  */
 export default function dynamicSmoothing (data, params) {
-	let minFc = params.minFc || 1
-	let maxFc = params.maxFc || 5000
-	let sens = params.sensitivity || 1
+	if (params.maxFc != null) throw new TypeError('dynamicSmoothing: maxFc is gone — the 2.4 algorithm (Simper self-modulating) takes a single fc; pass { fc }')
+	let fc = params.fc || params.minFc || 1
+	let sens = params.sensitivity ?? 1
 	let fs = params.fs || 44100
 
-	let s1 = params._s1 || 0, s2 = params._s2 || 0
-	let prev = params._prev || 0
+	// Base coefficient from cutoff (TPT one-pole): g0 = 2·gc/(1+gc), gc = tan(π·fc/fs)
+	let gc = tan(PI * fc / fs)
+	let g0 = 2 * gc / (1 + gc)
+
+	let low1 = params._low1 ?? data[0] ?? 0
+	let low2 = params._low2 ?? data[0] ?? 0
 
 	for (let i = 0, n = data.length; i < n; i++) {
-		// Estimate speed of change
-		let speed = abs(data[i] - prev)
-		prev = data[i]
-
-		// Adaptive cutoff
-		let fc = minFc + (maxFc - minFc) * Math.min(speed * sens, 1)
-		let g = tan(PI * fc / fs)
-		let k = 2  // damping
-
-		// SVF lowpass
-		let a1 = 1 / (1 + g * (g + k))
-		let a2 = g * a1
-		let a3 = g * a2
-
-		let v3 = data[i] - s2
-		let v1 = a1 * s1 + a2 * v3
-		let v2 = s2 + a2 * s1 + a3 * v3
-		s1 = 2 * v1 - s1
-		s2 = 2 * v2 - s2
-
-		data[i] = v2  // lowpass output
+		let band = low1 - low2
+		let g = min(g0 + sens * abs(band), 1)
+		low1 = low1 + g * (data[i] - low1)
+		low2 = low2 + g * (low1 - low2)
+		data[i] = low2
 	}
 
-	params._s1 = s1; params._s2 = s2; params._prev = prev
+	params._low1 = low1
+	params._low2 = low2
 	return data
 }

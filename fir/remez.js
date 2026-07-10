@@ -9,6 +9,7 @@
  */
 export default function remez (numtaps, bands, desired, weight, maxiter) {
 	if (!maxiter) maxiter = 40
+	if (numtaps % 2 === 0) throw Error('remez: numtaps must be odd (type I linear phase)')
 	let M = (numtaps - 1) / 2
 	let L = M + 1
 	let nBands = bands.length / 2
@@ -152,13 +153,12 @@ export default function remez (numtaps, bands, desired, weight, maxiter) {
 		adjDesired[i] = desiredGrid[extr[i]] - sign * delta / weightGrid[extr[i]]
 	}
 
-	// Sample A(omega) at uniformly-spaced points and IDFT to get cosine coefficients
-	let nSample = 4 * L
-	let samples = new Float64Array(nSample)
-
-	for (let k = 0; k < nSample; k++) {
-		let omega = Math.PI * k / nSample
-		let xk = Math.cos(omega)
+	// Exact reconstruction (McClellan): A(ω) is a degree-M cosine polynomial, so
+	// numtaps samples at ω_k = 2πk/numtaps determine it exactly —
+	// h[n] = (1/numtaps)·[A(0) + 2·Σ_k A(ω_k)·cos(ω_k·(n-M))]
+	let Ak = new Float64Array(M + 1)
+	for (let k = 0; k <= M; k++) {
+		let xk = Math.cos(2 * Math.PI * k / numtaps)
 		let numVal = 0, denVal = 0
 		let exact = -1
 		for (let i = 0; i < nExtr; i++) {
@@ -168,25 +168,16 @@ export default function remez (numtaps, bands, desired, weight, maxiter) {
 			numVal += term * adjDesired[i]
 			denVal += term
 		}
-		samples[k] = exact >= 0 ? adjDesired[exact] : numVal / denVal
+		Ak[k] = exact >= 0 ? adjDesired[exact] : numVal / denVal
 	}
 
-	// IDFT to get cosine coefficients
-	let a = new Float64Array(L)
-	for (let k = 0; k < L; k++) {
-		let sum = 0
-		for (let n = 0; n < nSample; n++) {
-			sum += samples[n] * Math.cos(k * Math.PI * n / nSample)
-		}
-		a[k] = sum / nSample * (k === 0 ? 1 : 2)
-	}
-
-	// Convert to impulse response
 	let h = new Float64Array(numtaps)
-	h[M] = a[0]
-	for (let i = 1; i <= M; i++) {
-		h[M - i] = a[i] / 2
-		h[M + i] = a[i] / 2
+	for (let n = 0; n < numtaps; n++) {
+		let sum = Ak[0]
+		for (let k = 1; k <= M; k++) {
+			sum += 2 * Ak[k] * Math.cos(2 * Math.PI * k * (n - M) / numtaps)
+		}
+		h[n] = sum / numtaps
 	}
 
 	return h

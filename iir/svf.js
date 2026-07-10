@@ -18,12 +18,15 @@ let types = {
  */
 export default function svf (data, params) {
 	if (!params.type) params.type = 'lowpass'
-	if (!params.Q) params.Q = .707
+	if (params.Q == null) params.Q = .707
 	if (!params.fs) params.fs = 44100
 	if (params.ic1eq == null) params.ic1eq = 0
 	if (params.ic2eq == null) params.ic2eq = 0
 
 	let fc = params.fc, Q = params.Q, fs = params.fs
+	if (!types[params.type]) throw Error(`svf: unknown type '${params.type}' (${Object.keys(types).join(', ')})`)
+	if (!(Q > 0)) throw Error('svf: Q must be > 0 (k = 1/Q)')
+	if (!(fc > 0) || fc >= fs / 2) throw Error('svf: fc must be within (0, fs/2)')
 
 	// recompute coefficients when params change
 	if (params._fc !== fc || params._Q !== Q || params._fs !== fs) {

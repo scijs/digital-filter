@@ -15,8 +15,12 @@ export default function lms (input, desired, params) {
 	let N = params.order || 32
 	let mu = params.mu || 0.01
 
-	if (!params.w) params.w = new Float64Array(N)
-	if (!params.buf) params.buf = new Float64Array(N)
+	// (Re)allocate state when absent or when order changed between calls
+	if (!params.w || params.w.length !== N) {
+		params.w = new Float64Array(N)
+		params.buf = new Float64Array(N)
+		params.ptr = 0
+	}
 
 	let w = params.w
 	let buf = params.buf

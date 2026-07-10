@@ -30,6 +30,9 @@ export function sos2zpk (sos) {
 			// First-order: b1*z + b2 = 0 → z = -b2/b1
 			gain *= s.b1
 			zeros.push({re: -s.b2 / s.b1, im: 0})
+		} else if (s.b2 !== 0) {
+			// Constant numerator b2 (pure scaled two-sample delay): gain only, no zeros
+			gain *= s.b2
 		}
 
 		// Denominator roots: z^2 + a1*z + a2 = 0 (a0 = 1)
@@ -71,22 +74,30 @@ export function sos2tf (sos) {
 
 /**
  * Convert transfer function polynomial coefficients to zeros, poles, gain.
+ * Coefficients are highest-power-first (scipy convention); leading zeros are
+ * stripped, matching scipy.signal.tf2zpk / numpy.roots semantics.
  *
  * @param {Array<number>|Float64Array} b - Numerator polynomial coefficients
  * @param {Array<number>|Float64Array} a - Denominator polynomial coefficients
  * @returns {{zeros: Array<{re:number,im:number}>, poles: Array<{re:number,im:number}>, gain: number}}
  */
 export function tf2zpk (b, a) {
-	let gain = b[0] / a[0]
+	let bn = trimLeadingZeros(Array.from(b))
+	let an = trimLeadingZeros(Array.from(a))
+	if (!an.length) throw Error('tf2zpk: denominator is zero')
+	if (!bn.length) return { zeros: [], poles: polyRoots(an.map(x => x / an[0])), gain: 0 }
 
-	// Normalize polynomials
-	let bn = Array.from(b).map(x => x / b[0])
-	let an = Array.from(a).map(x => x / a[0])
-
-	let zeros = polyRoots(bn)
-	let poles = polyRoots(an)
+	let gain = bn[0] / an[0]
+	let zeros = polyRoots(bn.map(x => x / bn[0]))
+	let poles = polyRoots(an.map(x => x / an[0]))
 
 	return { zeros, poles, gain }
+}
+
+function trimLeadingZeros (p) {
+	let i = 0
+	while (i < p.length && p[i] === 0) i++
+	return p.slice(i)
 }
 
 // ────── ZPK → SOS ──────
@@ -228,8 +239,19 @@ function polymul (p1, p2) {
 	return result
 }
 
-// Find roots of polynomial p = [1, p1, p2, ...] (leading coefficient = 1)
-function polyRoots (p) {
+// Find roots of monic polynomial p = [1, p1, p2, ...] (leading coefficient = 1).
+// Trailing zeros are factored out as exact roots at the origin before iterating —
+// a zero constant term would otherwise collapse Durand-Kerner's initial radius to 0.
+// Shared by residue.js (partial fractions) — keep the one copy here.
+export function polyRoots (p) {
+	let originRoots = 0
+	while (p.length > 1 && p[p.length - 1] === 0) { p = p.slice(0, -1); originRoots++ }
+	let roots = polyRootsCore(p)
+	for (let i = 0; i < originRoots; i++) roots.push({ re: 0, im: 0 })
+	return roots
+}
+
+function polyRootsCore (p) {
 	let n = p.length - 1
 	if (n === 0) return []
 	if (n === 1) return [{ re: -p[1], im: 0 }]
@@ -242,11 +264,11 @@ function polyRoots (p) {
 function durandKerner (p) {
 	let n = p.length - 1
 
-	// Initial guesses: points on a circle
+	// Initial guesses: points on a circle (radius fallback 1 guards |p[n]|=0)
 	let roots = []
 	for (let i = 0; i < n; i++) {
 		let angle = 2 * Math.PI * i / n + 0.4
-		let r = Math.pow(Math.abs(p[n]), 1 / n)
+		let r = Math.pow(Math.abs(p[n]), 1 / n) || 1
 		roots.push({ re: r * Math.cos(angle), im: r * Math.sin(angle) })
 	}
 
@@ -315,14 +337,17 @@ function pairConjugates (list) {
 				pairs.push([list[i], null])
 			}
 		} else {
-			// Complex: find conjugate
+			// Complex: find conjugate — accept only a genuine match, never force-pair
+			// a distant point. Tolerance is loose (1e-3, magnitude-relative) because
+			// Durand-Kerner clusters around an m-fold root only to ~eps^(1/m).
 			let bestJ = -1, bestDist = Infinity
 			for (let j = i + 1; j < list.length; j++) {
 				if (used[j]) continue
 				let dist = Math.abs(list[i].re - list[j].re) + Math.abs(list[i].im + list[j].im)
 				if (dist < bestDist) { bestDist = dist; bestJ = j }
 			}
-			if (bestJ >= 0) {
+			let tol = 1e-3 * (1 + Math.abs(list[i].re) + Math.abs(list[i].im))
+			if (bestJ >= 0 && bestDist < tol) {
 				used[bestJ] = true
 				pairs.push([list[i], list[bestJ]])
 			} else {

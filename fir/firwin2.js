@@ -21,10 +21,12 @@ export default function firwin2 (numtaps, freq, gain, opts) {
 	let nfft = opts.nfft || 1024
 	if (nfft < numtaps) nfft = numtaps * 2
 
-	// Interpolate onto dense grid
-	let H = new Float64Array(nfft)
-	for (let i = 0; i < nfft; i++) {
-		let f = i / nfft
+	// Interpolate onto dense half-spectrum grid: DFT bin i ↔ f = i/(nfft/2),
+	// so Nyquist (f = 1) sits at bin nfft/2 — not at bin nfft
+	let half = nfft / 2
+	let H = new Float64Array(half + 1)
+	for (let i = 0; i <= half; i++) {
+		let f = i / half
 		let j = 0
 		while (j < freq.length - 1 && freq[j + 1] < f) j++
 		if (j >= freq.length - 1) { H[i] = gain[gain.length - 1]; continue }
@@ -35,11 +37,11 @@ export default function firwin2 (numtaps, freq, gain, opts) {
 	// Conjugate-symmetric spectrum for real output
 	let re = new Float64Array(nfft)
 	re[0] = H[0]
-	for (let i = 1; i < nfft / 2; i++) {
+	for (let i = 1; i < half; i++) {
 		re[i] = H[i]
 		re[nfft - i] = H[i]
 	}
-	re[nfft / 2] = H[nfft / 2]
+	re[half] = H[half]
 
 	// IDFT → impulse response
 	let h = new Float64Array(nfft)

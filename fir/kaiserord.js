@@ -16,8 +16,9 @@ export default function kaiserord (deltaF, attenuation) {
 		beta = 0
 	}
 
-	let numtaps = Math.ceil((A - 7.95) / (2.285 * deltaF * Math.PI))
-	// Ensure odd
+	// Kaiser's formula: N = (A - 7.95)/(2.285*Δω) + 1 (scipy.signal.kaiserord)
+	let numtaps = Math.ceil((A - 7.95) / (2.285 * deltaF * Math.PI) + 1)
+	// Ensure odd (Type I — no forced zero at Nyquist)
 	if (numtaps % 2 === 0) numtaps++
 
 	return { numtaps, beta }

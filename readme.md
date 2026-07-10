@@ -5,7 +5,7 @@ Digital filter design and processing.
 <table><tr><td valign="top">
 
 **[IIR](#iir)**<br>
-<sub>[biquad](#biquad) · [svf](#svfdata-params) · [butterworth](#butterworthorder-fc-fs-type) · [chebyshev](#chebyshevorder-fc-fs-ripple-type) · [chebyshev2](#chebyshev2order-fc-fs-attenuation-type) · [elliptic](#ellipticorder-fc-fs-ripple-attenuation-type) · [bessel](#besselorder-fc-fs-type) · [legendre](#legendreorder-fc-fs-type) · [linkwitzRiley](#linkwitzrileyorder-fc-fs) · [iirdesign](#iirdesignfpass-fstop-rp-rs-fs) · [buttord](#buttordfpass-fstop-rp-rs-fs) · [cheb1ord](#cheb1ordfpass-fstop-rp-rs-fs) · [ellipord](#ellipordfpass-fstop-rp-rs-fs)</sub>
+<sub>[biquad](#biquad) · [svf](#svfdata-params) · [butterworth](#butterworthorder-fc-fs-type) · [chebyshev](#chebyshevorder-fc-fs-ripple-type) · [chebyshev2](#chebyshev2order-fc-fs-attenuation-type) · [elliptic](#ellipticorder-fc-fs-ripple-attenuation-type) · [bessel](#besselorder-fc-fs-type) · [legendre](#legendreorder-fc-fs-type) · [linkwitzRiley](#linkwitzrileyorder-fc-fs) · [iirdesign](#iirdesignfpass-fstop-rp-rs-fs) · [buttord](#buttordfpass-fstop-rp-rs-fs) · [cheb1ord](#cheb1ordfpass-fstop-rp-rs-fs) · [cheb2ord](#cheb2ordfpass-fstop-rp-rs-fs) · [ellipord](#ellipordfpass-fstop-rp-rs-fs)</sub>
 
 **[FIR](#fir)**<br>
 <sub>[firwin](#firwinnumtaps-cutoff-fs-opts) · [firls](#firlsnumtaps-bands-desired-weight) · [remez](#remeznumtaps-bands-desired-weight) · [firwin2](#firwin2numtaps-freq-gain-opts) · [hilbert](#hilbertn) · [differentiator](#differentiatorn-opts) · [raisedCosine](#raisedcosinen-beta-sps-opts) · [gaussianFir](#gaussianfirn-bt-sps) · [matchedFilter](#matchedfiltertemplate) · [minimumPhase](#minimumphaseh) · [yulewalk](#yulewalkorder-frequencies-magnitudes) · [kaiserord](#kaiserorddeltaf-attenuation) · [integrator](#integratorrule) · [lattice](#latticedata-params) · [warpedFir](#warpedfirdata-params)</sub>
@@ -19,10 +19,10 @@ Digital filter design and processing.
 <sub>[lms](#lmsinput-desired-params) · [nlms](#nlmsinput-desired-params) · [rls](#rlsinput-desired-params) · [levinson](#levinsonr-order)</sub>
 
 **[Multirate](#multirate)**<br>
-<sub>[decimate](#decimatedata-factor-opts) · [interpolate](#interpolatedata-factor-opts) · [halfBand](#halfbandnumtaps) · [cic](#cicdata-r-n) · [polyphase](#polypaseh-m) · [farrow](#farrowdata-params) · [thiran](#thirandelay-order) · [oversample](#oversampledata-factor-opts)</sub>
+<sub>[decimate](#decimatedata-factor-opts) · [interpolate](#interpolatedata-factor-opts) · [resample](#resampledata-p-q-opts) · [upfirdn](#upfirdndata-h-up-down) · [halfBand](#halfbandnumtaps) · [cic](#cicdata-r-n) · [polyphase](#polyphaseh-m) · [farrow](#farrowdata-params) · [thiran](#thirandelay-order) · [oversample](#oversampledata-factor-opts)</sub>
 
 **[Core](#core)**<br>
-<sub>[filter](#filterdata-params) · [iir](#iirdata-params) · [filtfilt](#filtfiltdata-params) · [convolution](#convolutionsignal-ir) · [detrend](#detrenddata-type) · [freqz](#freqzcoefs-n-fs) · [mag2db](#mag2dbmag) · [groupDelay](#groupdelaycoefs-n-fs) · [phaseDelay](#phasedelaycoefs-n-fs) · [impulseResponse](#impulseresponsecoefs-n) · [stepResponse](#stepresponsecoefs-n) · [isStable](#isstablesos) · [isMinPhase](#isminphasesos) · [isFir](#isfirsos) · [isLinPhase](#islinphaseh) · [sos2zpk](#sos2zpksos) · [sos2tf](#sos2tfsos) · [tf2zpk](#tf2zpkb-a) · [tf2sos](#tf2sosb-a) · [zpk2sos](#zpk2soszpk) · [zpk2tf](#zpk2tfzpk) · [sosfilt_zi](#sosfilt_zisos) · [transform](#transform)</sub>
+<sub>[filter](#filterdata-params) · [iir](#iirdata-params) · [filtfilt](#filtfiltdata-params) · [convolution](#convolutionsignal-ir) · [detrend](#detrenddata-type) · [freqz](#freqzcoefs-n-fs) · [mag2db](#mag2dbmag) · [groupDelay](#groupdelaycoefs-n-fs) · [phaseDelay](#phasedelaycoefs-n-fs) · [impulseResponse](#impulseresponsecoefs-n) · [stepResponse](#stepresponsecoefs-n) · [isStable](#isstablesos) · [isMinPhase](#isminphasesos) · [isFir](#isfirsos) · [isLinPhase](#islinphaseh) · [sos2zpk](#sos2zpksos) · [sos2tf](#sos2tfsos) · [tf2zpk](#tf2zpkb-a) · [tf2sos](#tf2sosb-a) · [zpk2sos](#zpk2soszpk) · [zpk2tf](#zpk2tfzpk) · [tf2ss](#tf2ssb-a--ss2tfa-b-c-d) · [ss2tf](#tf2ssb-a--ss2tfa-b-c-d) · [residue](#residueb-a) · [matchedZ](#matchedzpoles-zeros-fs-normfreq) · [deconvolve](#deconvolveb-a) · [wiener](#wienerdata-opts) · [sosfiltZi](#sosfiltzisos) · [transform](#transform)</sub>
 
 </td></tr></table>
 
@@ -107,7 +107,7 @@ filter(data, { coefs: lp })
 
 ### `svf(data, params)`
 
-State variable filter – same transfer function as a biquad, but trapezoidal integration allows zero-delay feedback. Safe for per-sample parameter modulation. Six simultaneous outputs. Simper/Cytomic (2011). Params: `fc`, `Q`, `fs`, `type`.
+State variable filter – same transfer function as a biquad, but trapezoidal integration allows zero-delay feedback. Safe for per-sample parameter modulation. Six response types from one topology. Simper/Cytomic (2011). Params: `fc`, `Q`, `fs`, `type`.
 
 $g = \tan(\pi f_c/f_s)$, $k = 1/Q$
 
@@ -164,14 +164,14 @@ let sos = chebyshev(4, 1000, 44100, 1)  // 1 dB ripple
 
 ### `chebyshev2(order, fc, fs, attenuation?, type?)`
 
-Flat passband, equiripple stopband. The ripple goes into the rejection region instead.
+Flat passband, equiripple stopband. The ripple goes into the rejection region instead. **`fc` is the STOPBAND edge** — the frequency where attenuation first reaches the floor — not the passband edge like every other IIR family.
 
 $|H(j\omega)|^2 = 1/(1 + 1/(\varepsilon^2 T_N^2(\omega_c/\omega)))$ — inverse of Type I. Zeros on $j\omega$ axis enforce stopband floor.
 
 **Flat passband · –40 dB stopband floor · –40 dB at 2× fc**
 
 ```js
-let sos = chebyshev2(4, 2000, 44100, 40)  // 40 dB rejection
+let sos = chebyshev2(4, 2000, 44100, 40)  // exactly -40 dB at 2 kHz, flat below
 ```
 
 **Use when**: flat passband needed with sharper rolloff than Butterworth.<br>
@@ -274,8 +274,8 @@ let { sos, order, type } = iirdesign(1000, 1500, 1, 40, 44100)
 Estimate minimum filter order needed to meet specs. Returns `{ order, Wn }`.
 
 ```js
-let { order, Wn } = buttord(1000, 1500, 1, 40, 44100)   // → order ≈ 13
-let { order } = ellipord(1000, 1500, 1, 40, 44100)       // → order ≈ 5 (much lower)
+let { order, Wn } = buttord(1000, 1500, 1, 40, 44100)     // → order = 13
+let { order: nEl } = ellipord(1000, 1500, 1, 40, 44100)   // → order = 5 (much lower)
 ```
 
 **scipy**: `scipy.signal.buttord`, `cheb1ord`, `cheb2ord`, `ellipord`.<br>
@@ -301,7 +301,7 @@ Finite impulse response – no feedback, always stable. Symmetric coefficients g
 
 ### `firwin(numtaps, cutoff, fs, opts?)`
 
-Window method FIR – truncated sinc multiplied by a window function. Supports `lowpass`, `highpass`, `bandpass`, `bandstop`. Default window: Hamming.
+Window method FIR – truncated sinc multiplied by a window function. Supports `lowpass`, `highpass`, `bandpass`, `bandstop`. `opts.window`: `'hamming'` (default), `'hann'`, `'blackman'`, `'blackman-harris'`, `'bartlett'`, `'rectangular'`, `['kaiser', beta]`, a `Float64Array`, or a `(N) => array` function — unknown names throw.
 
 $h[n] = \sin(\omega_c n)/(\pi n) \cdot w[n]$ — sinc gives ideal brick-wall, window smooths truncation.
 
@@ -443,9 +443,9 @@ let h = gaussianFir(33, 0.3, 4)
 
 ### `matchedFilter(template)`
 
-Optimal detector for a known waveform in white noise – time-reversed, energy-normalized template. Maximizes SNR at detection point.
+Optimal detector for a known waveform in white noise – time-reversed, energy-normalized template. Maximizes SNR at detection point; correlating against the template itself peaks at exactly 1.
 
-$h[n] = s[N-1-n] / \|s\|$
+$h[n] = s[N-1-n] / \|s\|^2$
 
 ```js
 let h = matchedFilter(template)
@@ -502,15 +502,16 @@ let h = integrator('simpson')
 
 ### `lattice(data, params)`
 
-Lattice/ladder IIR using reflection coefficients (PARCOR). Alternative topology to direct form – each stage is independently stable when $|k_i| < 1$. Params: `k` (reflection coefficients), `v` (ladder/feedforward, optional).
+Lattice filter over reflection coefficients (PARCOR). Alternative topology to direct form – each stage is independently stable when $|k_i| < 1$. Params: `k` (reflection coefficients), `type` (`'fir'` analysis/whitening — default, or `'iir'` all-pole synthesis), `v` (ladder/feedforward, optional). `iir` inverts `fir` exactly: `lattice(lattice(x, {k}), {k, type: 'iir'}) === x`.
 
 ```js
-// Use reflection coefficients from levinson LPC analysis
+// Reflection coefficients from levinson LPC analysis
 let { k } = levinson(autocorrelation, 12)
-lattice(data, { k })  // apply as synthesis filter
+let error = lattice(data, { k })     // analysis: whiten to prediction error
+lattice(error, { k, type: 'iir' })   // synthesis: rebuild the signal
 ```
 
-**Use when**: LPC synthesis, speech coding, high-precision filtering where numerical stability matters.<br>
+**Use when**: LPC analysis/synthesis, speech coding, adaptive structures.<br>
 **Not for**: general filtering (use filter with SOS).<br>
 **MATLAB**: `latcfilt`.
 
@@ -537,8 +538,8 @@ Estimates how many FIR taps you need and what Kaiser window $\beta$ to use, give
 ```js
 // "I need 60 dB rejection with 10% of Nyquist transition width"
 let { numtaps, beta } = kaiserord(0.1, 60)
-// numtaps ≈ 55, beta ≈ 5.65
-let h = firwin(numtaps, 4000, 44100, { window: kaiser(numtaps, beta) })
+// numtaps ≈ 75, beta ≈ 5.65
+let h = firwin(numtaps, 4000, 44100, { window: ['kaiser', beta] })
 ```
 
 **Use when**: estimating FIR order before designing with firwin.<br>
@@ -648,14 +649,16 @@ gaussianIir(data, { sigma: 10 })
 
 ### `dynamicSmoothing(data, params)`
 
-Self-adjusting SVF – cutoff adapts to signal speed. For smoothing parameter changes without zipper noise. Params: `minFc`, `maxFc`, `sensitivity`, `fs`.
+Self-modulating lowpass – the filter's own band energy opens its cutoff, so it snaps to fast changes and settles glassy-smooth. Simper (2016).[^dynsmooth] Params: `fc` (base cutoff), `sensitivity`, `fs`.
 
-$f_c(n) = f_{min} + (f_{max} - f_{min}) \cdot |x[n] - x[n-1]|^s$
+[^dynsmooth]: A. Simper, ["Dynamic Smoothing Using Self Modulating Filter"](https://cytomic.com/files/dsp/DynamicSmoothing.pdf), Cytomic technical paper, 2016.
 
-**Adaptive · 2nd-order SVF**
+$g = \min(g_0 + s \cdot |low_1 - low_2|,\ 1)$ — two cascaded one-pole stages sharing the modulated coefficient $g$
+
+**Adaptive · 2 cascaded one-pole stages**
 
 ```js
-dynamicSmoothing(data, { minFc: 1, maxFc: 5000, sensitivity: 1, fs: 44100 })
+dynamicSmoothing(data, { fc: 1, sensitivity: 1, fs: 44100 })
 ```
 
 **Use when**: audio parameter smoothing at audio rate.<br>
@@ -840,6 +843,28 @@ let up = interpolate(data, 4)
 
 <img src="plot/interpolate.svg">
 
+### `resample(data, p, q, opts?)`
+
+Rational-rate resampling by p/q — upsample, anti-alias/anti-image FIR, downsample in one pass (via `upfirdn`), delay-compensated to sample-exact alignment.
+
+```js
+let out = resample(data, 3, 2)   // 44.1k → 66.15k: 1.5× the rate
+let cd = resample(data, 160, 147) // 44.1k → 48k
+```
+
+**Use when**: converting between arbitrary rational rates.<br>
+**scipy**: `scipy.signal.resample_poly`. **MATLAB**: `resample`.
+
+### `upfirdn(data, h, up, down)`
+
+Upsample → FIR → downsample, the general multirate primitive. No intermediate upsampled buffer.
+
+```js
+let out = upfirdn(data, h, 3, 2)
+```
+
+**scipy**: `scipy.signal.upfirdn`.
+
 ### `halfBand(numtaps?)`
 
 Half-band FIR – nearly half the coefficients are zero, halving multiply count. The building block for efficient 2× rate changes.
@@ -919,12 +944,11 @@ let { b, a } = thiran(3.7)
 
 ### `oversample(data, factor, opts?)`
 
-Multi-stage upsampling with anti-alias FIR. Oversample before nonlinear processing, then decimate back.
-
-Cascade of interpolation stages with anti-alias FIR at each.
+Upsampling with a Kaiser anti-image FIR designed from an attenuation spec — the filter length scales with the factor, so rejection holds at any factor. Oversample before nonlinear processing, then decimate back. Params: `attenuation?` (dB, default 70), `numtaps?` (override).
 
 ```js
 let up = oversample(data, 4)
+let hq = oversample(data, 8, { attenuation: 90 })
 ```
 
 **Use when**: oversampling before distortion/waveshaping/saturation.<br>
@@ -962,7 +986,7 @@ iir(data, { b: [0.1, 0.2, 0.1], a: [1, -0.8, 0.2] })
 
 ### `filtfilt(data, params)`
 
-Zero-phase forward-backward filtering. Doubles effective order, eliminates phase distortion. Offline only. Params: `coefs`.
+Zero-phase forward-backward filtering. Doubles effective order, eliminates phase distortion. Odd-reflection padding + steady-state initial conditions keep the edges transient-free (scipy `sosfiltfilt` semantics). Offline only. Params: `coefs`, `padlen?` (default `3·(2·sections+1)`, `0` disables).
 
 ```js
 filtfilt(data, { coefs: butterworth(4, 1000, 44100) })
@@ -991,12 +1015,13 @@ let out = convolution(signal, firCoefs)
 
 ### `freqz(coefs, n?, fs?)` · `mag2db(mag)`
 
-Frequency response of SOS filter. Returns `{ frequencies, magnitude, phase }`. Second argument can be a number (evenly spaced points) or an array of Hz values.
+Frequency response of an SOS filter or a `{b, a}` transfer function (the shape `yulewalk`/`thiran` return). Returns `{ frequencies, magnitude, phase }`. Second argument can be a number (evenly spaced points) or an array of Hz values.
 
 ```js
-let resp = freqz(sos, 512, 44100)             // 512 evenly spaced points
-let resp = freqz(sos, [100, 1000, 10000], 44100)  // at specific frequencies
-let dB = mag2db(resp.magnitude)                // 20·log10(mag)
+let resp = freqz(sos, 512, 44100)                  // 512 evenly spaced points
+let picked = freqz(sos, [100, 1000, 10000], 44100) // at specific frequencies
+let tfResp = freqz(thiran(3.5), 512, 44100)        // {b, a} transfer function
+let dB = mag2db(resp.magnitude)                    // 20·log10(mag)
 ```
 
 ### `groupDelay(coefs, n?, fs?)` · `phaseDelay(coefs, n?, fs?)`
@@ -1040,14 +1065,67 @@ let sos3 = tf2sos(b, a)       // shortcut: tf → zpk → sos
 let { b: b2, a: a2 } = zpk2tf(zpk)
 ```
 
-### `sosfilt_zi(sos)`
+### `tf2ss(b, a)` · `ss2tf(A, B, C, D)`
 
-Compute initial conditions for SOS filter to start in steady state (no transient when input starts at a non-zero value).
+Transfer function ↔ state-space (controllable canonical form).
+
+```js
+let { A, B, C, D } = tf2ss([1, 0.5], [1, -0.8])
+let { b, a } = ss2tf(A, B, C, D)
+```
+
+**scipy**: `scipy.signal.tf2ss` / `ss2tf`.
+
+### `residue(b, a)`
+
+Partial fraction expansion of $B(z)/A(z)$ over $z^{-1}$: $H(z) = \sum_k r_k/(1 - p_k z^{-1}) + \sum_m k_m z^{-m}$. Simple poles only — repeated poles throw.
+
+```js
+let { r, p, k } = residue([1], [1, -1.5, 0.5])
+// r: residues, p: poles, k: direct FIR terms
+```
+
+**scipy**: `scipy.signal.residuez`. **MATLAB**: `residuez`.
+
+### `matchedZ(poles, zeros, fs, normFreq?)`
+
+Matched-z transform: map analog poles/zeros to digital via $z = e^{sT}$ — an alternative to the bilinear transform that preserves pole frequencies exactly (no warping) at the cost of aliasing the response.
+
+```js
+let sos = matchedZ([{re: -1000, im: 8000}], [], 44100, 0)
+```
+
+**MATLAB**: `impinvar`-adjacent; classic matched-z from Rabiner & Gold.
+
+### `deconvolve(b, a)`
+
+Polynomial long division — inverse of `convolution`: recover a signal from its convolution with a known kernel.
+
+```js
+let { q, r } = deconvolve(convolved, kernel)  // q: quotient, r: remainder
+```
+
+**scipy**: `scipy.signal.deconvolve`. **MATLAB**: `deconv`.
+
+### `wiener(data, opts?)`
+
+Local adaptive Wiener denoising — attenuates toward the local mean where the local variance is near the noise floor.
+
+```js
+wiener(data, { size: 5 })          // noise power estimated from the signal
+wiener(data, { size: 5, noise: 0.01 })
+```
+
+**scipy**: `scipy.signal.wiener`. **MATLAB**: `wiener2` (1-D analog).
+
+### `sosfiltZi(sos)`
+
+Compute initial conditions for SOS filter to start in steady state (no transient when input starts at a non-zero value). Scale by the first sample: `zi.map(([a, b]) => [a * x0, b * x0])`.
 
 ```js
 let sos = butterworth(4, 1000, 44100)
-let zi = sosfilt_zi(sos)
-filter(data, { coefs: sos, state: zi })  // no startup transient
+let zi = sosfiltZi(sos)
+filter(data, { coefs: sos, state: zi })  // no startup transient for unit-level input
 ```
 
 ### `transform`
@@ -1056,7 +1134,7 @@ Analog prototype → digital SOS pipeline. Used internally by IIR design functio
 
 ```js
 transform.polesSos(poles, fc, fs, 'lowpass')
-transform.poleZerosSos(poles, zeros, fc, fs, 'bandpass')
+transform.poleZerosSos(poles, zeros, [fLow, fHigh], fs, 'bandpass')
 transform.prewarp(fc, fs)  // bilinear frequency prewarping
 ```
 
@@ -1182,8 +1260,11 @@ let { a, k } = levinson(R, order)
 
 ### Karplus-Strong string
 
+Uses `comb` from the companion [audio-filter](https://github.com/audiojs/audio-filter) package (not part of digital-filter):
+
 ```js
-import { comb, onePole } from 'audio-filter'
+import { comb } from 'audio-filter'          // external package
+import { onePole } from 'digital-filter'
 
 let delay = Math.round(44100 / 440)  // A4
 let data = new Float64Array(44100)
@@ -1236,7 +1317,7 @@ Options: `{ fs, bins, color, fill }`. Defaults from `theme`.
 **`theme`** – mutable object controlling defaults:
 
 ```js
-theme.colors = ['#4a90d9', '#e74c3c', '#2ecc71', ...]  // per-panel or per-series
+theme.colors = ['#4a90d9', '#e74c3c', '#2ecc71']  // per-panel or per-series
 theme.fill = true      // fill under curves
 theme.fs = 44100
 theme.bins = 2048      // FFT bins

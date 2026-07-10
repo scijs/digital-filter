@@ -39,6 +39,8 @@ export default function chebyshev (order, fc, fs, ripple, type) {
 }
 
 // Chebyshev Type I prototype poles (normalized LP at 1 rad/s)
+export { chebyshevPoles as poles }  // pre-2.4 subpath export kept
+export function type2 () { throw new Error('chebyshev type2: use iir/chebyshev2.js') }  // pre-2.4 stub kept (always threw)
 function chebyshevPoles (N, ripple) {
 	let eps = sqrt(pow(10, ripple / 10) - 1)
 	let mu = asinh(1 / eps) / N
@@ -52,7 +54,3 @@ function chebyshevPoles (N, ripple) {
 
 	return poles
 }
-
-export function type2 () { throw Error('Chebyshev Type II not yet implemented') }
-
-export { chebyshevPoles as poles }
