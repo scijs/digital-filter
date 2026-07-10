@@ -1,104 +1,43 @@
-let { cos, sqrt, abs, PI } = Math
+// Windows come from window-function (scijs) — the canonical per-sample evaluators
+// (symmetric, N-1 denominator: scipy.signal.windows / Harris 1978 conventions).
+// This module only adapts them to FIR design's fill shape: name(N) → Float64Array.
+import {
+	hamming as wfHamming, hann as wfHann, blackman as wfBlackman,
+	blackmanHarris as wfBlackmanHarris, bartlett as wfBartlett,
+	rectangular as wfRectangular, kaiser as wfKaiser,
+} from 'window-function'
 
-// Symmetric (sym=true) window definitions, N-1 denominator — matches
-// scipy.signal.windows / Harris 1978 "On the use of windows..." conventions.
-
-/**
- * Hamming window.
- * @param {number} N - Window length
- * @returns {Float64Array}
- */
-export function hamming (N) {
+const fill = (fn, N, ...args) => {
 	let w = new Float64Array(N)
-	for (let i = 0; i < N; i++) w[i] = 0.54 - 0.46 * cos(2 * PI * i / (N - 1))
+	for (let i = 0; i < N; i++) w[i] = fn(i, N, ...args)
 	return w
 }
 
-/**
- * Hann window.
- * @param {number} N
- * @returns {Float64Array}
- */
-export function hann (N) {
-	let w = new Float64Array(N)
-	for (let i = 0; i < N; i++) w[i] = 0.5 - 0.5 * cos(2 * PI * i / (N - 1))
-	return w
-}
+/** Hamming window. @param {number} N @returns {Float64Array} */
+export const hamming = (N) => fill(wfHamming, N)
+
+/** Hann window. @param {number} N @returns {Float64Array} */
+export const hann = (N) => fill(wfHann, N)
+
+/** Blackman window (a0=0.42, a1=0.5, a2=0.08). @param {number} N @returns {Float64Array} */
+export const blackman = (N) => fill(wfBlackman, N)
+
+/** 4-term Blackman-Harris window (−92 dB sidelobes). @param {number} N @returns {Float64Array} */
+export const blackmanHarris = (N) => fill(wfBlackmanHarris, N)
+
+/** Bartlett (triangular, zero-ended) window. @param {number} N @returns {Float64Array} */
+export const bartlett = (N) => fill(wfBartlett, N)
+
+/** Rectangular (boxcar) window. @param {number} N @returns {Float64Array} */
+export const rectangular = (N) => fill(wfRectangular, N)
 
 /**
- * Blackman window (a0=0.42, a1=0.5, a2=0.08).
+ * Kaiser window: I0(beta·sqrt(1−x²))/I0(beta), x = 2i/(N−1) − 1.
  * @param {number} N
+ * @param {number} beta - Shape parameter (0 = rectangular; ~0.1102·(A−8.7) for A dB stopband)
  * @returns {Float64Array}
  */
-export function blackman (N) {
-	let w = new Float64Array(N)
-	for (let i = 0; i < N; i++) {
-		let x = 2 * PI * i / (N - 1)
-		w[i] = 0.42 - 0.5 * cos(x) + 0.08 * cos(2 * x)
-	}
-	return w
-}
-
-/**
- * 4-term Blackman-Harris window (-92 dB sidelobes).
- * @param {number} N
- * @returns {Float64Array}
- */
-export function blackmanHarris (N) {
-	let w = new Float64Array(N)
-	for (let i = 0; i < N; i++) {
-		let x = 2 * PI * i / (N - 1)
-		w[i] = 0.35875 - 0.48829 * cos(x) + 0.14128 * cos(2 * x) - 0.01168 * cos(3 * x)
-	}
-	return w
-}
-
-/**
- * Bartlett (triangular, zero-ended) window.
- * @param {number} N
- * @returns {Float64Array}
- */
-export function bartlett (N) {
-	let w = new Float64Array(N)
-	for (let i = 0; i < N; i++) w[i] = 1 - abs(2 * i / (N - 1) - 1)
-	return w
-}
-
-/**
- * Rectangular (boxcar) window.
- * @param {number} N
- * @returns {Float64Array}
- */
-export function rectangular (N) {
-	return new Float64Array(N).fill(1)
-}
-
-/**
- * Kaiser window: I0(beta*sqrt(1-x^2))/I0(beta), x = 2i/(N-1) - 1.
- * @param {number} N
- * @param {number} beta - Shape parameter (0 = rectangular; ~0.1102*(A-8.7) for A dB stopband)
- * @returns {Float64Array}
- */
-export function kaiser (N, beta) {
-	let w = new Float64Array(N)
-	let denom = besselI0(beta)
-	for (let i = 0; i < N; i++) {
-		let x = 2 * i / (N - 1) - 1
-		w[i] = besselI0(beta * sqrt(1 - x * x)) / denom
-	}
-	return w
-}
-
-// Modified Bessel function of the first kind, order 0 (series expansion)
-function besselI0 (x) {
-	let sum = 1, term = 1
-	for (let k = 1; k < 50; k++) {
-		term *= (x / (2 * k)) * (x / (2 * k))
-		sum += term
-		if (term < sum * 1e-16) break
-	}
-	return sum
-}
+export const kaiser = (N, beta) => fill(wfKaiser, N, beta)
 
 const WINDOWS = {
 	hamming, hann, hanning: hann, blackman,
