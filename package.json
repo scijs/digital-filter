@@ -1,6 +1,6 @@
 {
   "name": "digital-filter",
-  "version": "2.4.2",
+  "version": "2.4.3",
   "type": "module",
   "sideEffects": false,
   "description": "Digital filter design & processing: IIR, FIR, smoothing, adaptive, multirate",
@@ -23,7 +23,7 @@
     "smooth/",
     "adaptive/",
     "multirate/",
-    "plot/"
+    "plot/index.js"
   ],
   "scripts": {
     "test": "node test.js",
